@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(NAME Spectrogram)
 project(${NAME})
 
-add_subdirectory(/home/xox/Programmation/DPF bin)
+add_subdirectory(/path/to/DPF bin)
 
 dpf_add_plugin(Spectrogram
   TARGETS jack vst2 # dssi lv2 vst2 vst3 clap
