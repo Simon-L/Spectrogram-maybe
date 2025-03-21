@@ -133,7 +133,7 @@ public:
         columns.sampleRate = plugin_ptr->getSampleRate();
 
         knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
-        scale_img = createImageFromFile("scale.png", IMAGE_GENERATE_MIPMAPS);
+        scale_img = createImageFromFile("_", IMAGE_GENERATE_MIPMAPS);
 
         knob = new AidaKnob(this, this, knob_img, scale_img);
         knob->toFront();

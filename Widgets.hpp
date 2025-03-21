@@ -57,10 +57,10 @@ protected:
         const double knobMargin = kKnobMargin * scaleFactor;
         const double wfontSize = kSubWidgetsFontSize * scaleFactor;
 
-        beginPath();
-        rect(0, 0, scaleSize, scaleSize);
-        fillPaint(imagePattern(0, 0, scaleSize, scaleSize, 0.f, scaleImage, 1.f));
-        fill();
+        // beginPath();
+        // rect(0, 0, scaleSize, scaleSize);
+        // fillPaint(imagePattern(0, 0, scaleSize, scaleSize, 0.f, scaleImage, 1.f));
+        // fill();
 
         fillColor(Color(1.f, 1.f, 1.f));
         fontSize(wfontSize);
