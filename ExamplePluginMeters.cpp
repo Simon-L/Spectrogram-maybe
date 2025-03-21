@@ -1,0 +1,205 @@
+/*
+ * DISTRHO Plugin Framework (DPF)
+ * Copyright (C) 2012-2024 Filipe Coelho <falktx@falktx.com>
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any purpose with
+ * or without fee is hereby granted, provided that the above copyright notice and this
+ * permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
+ * TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN
+ * NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+ * DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER
+ * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#include "ExamplePluginMeters.hpp"
+
+START_NAMESPACE_DISTRHO
+
+// -----------------------------------------------------------------------------------------------------------
+
+ExamplePluginMeters::ExamplePluginMeters()
+    : Plugin(3, 0, 0), // 3 parameters, 0 programs, 0 states
+      fColor(0.0f),
+      fOutLeft(0.0f),
+      fOutRight(0.0f),
+      fNeedsReset(true)
+{
+    myHeapBuffer.createBuffer(sizeof(RbMsg) * 64); // 2 seconds of floats @ 48k + 2048 bytes
+}
+
+const char* ExamplePluginMeters::getLabel() const
+{
+    return "meters";
+}
+
+const char* ExamplePluginMeters::getDescription() const
+{
+    return "Plugin to demonstrate parameter outputs using meters.";
+}
+
+const char* ExamplePluginMeters::getMaker() const
+{
+    return "Author Name";
+}
+
+const char* ExamplePluginMeters::getHomePage() const
+{
+    return "https://example.com";
+}
+
+const char* ExamplePluginMeters::getLicense() const
+{
+    return "Proprietary";
+}
+
+uint32_t ExamplePluginMeters::getVersion() const
+{
+    return d_version(1, 0, 0);
+}
+
+void ExamplePluginMeters::sampleRateChanged(double newSampleRate)
+{
+    // Handle sample rate change if necessary
+}
+
+void ExamplePluginMeters::initParameter(uint32_t index, Parameter& parameter)
+{
+    /**
+        All parameters in this plugin have the same ranges.
+    */
+    parameter.ranges.min = 0.0f;
+    parameter.ranges.max = 1.0f;
+    parameter.ranges.def = 0.0f;
+
+    /**
+        Set parameter data.
+    */
+    switch (index)
+    {
+    case 0:
+        parameter.hints  = kParameterIsAutomatable|kParameterIsInteger;
+        parameter.name   = "color";
+        parameter.symbol = "color";
+        parameter.enumValues.count = 2;
+        parameter.enumValues.restrictedMode = true;
+        {
+            ParameterEnumerationValue* const values = new ParameterEnumerationValue[2];
+            parameter.enumValues.values = values;
+
+            values[0].label = "Green";
+            values[0].value = METER_COLOR_GREEN;
+            values[1].label = "Blue";
+            values[1].value = METER_COLOR_BLUE;
+        }
+        break;
+    case 1:
+        parameter.hints  = kParameterIsAutomatable|kParameterIsOutput;
+        parameter.name   = "out-left";
+        parameter.symbol = "out_left";
+        break;
+    case 2:
+        parameter.hints  = kParameterIsAutomatable|kParameterIsOutput;
+        parameter.name   = "out-right";
+        parameter.symbol = "out_right";
+        break;
+    }
+}
+
+float ExamplePluginMeters::getParameterValue(uint32_t index) const
+{
+    switch (index)
+    {
+        case 0: return fColor;
+        case 1: return fOutLeft;
+        case 2: return fOutRight;
+    }
+
+    return 0.0f;
+}
+
+void ExamplePluginMeters::setParameterValue(uint32_t index, float value)
+{
+    if (index != 0) return;
+
+    fColor = value;
+}
+
+void ExamplePluginMeters::initState(uint32_t index, State& state)
+{
+    // Initialize states if necessary
+}
+
+void ExamplePluginMeters::setState(const char* key, const char* value)
+{
+    if (std::strcmp(key, "reset") != 0)
+        return;
+
+    fNeedsReset = true;
+}
+
+void generateSineWave(float* sineWave, float frequency, float samplingRate, const size_t numSamples) {
+    const float amplitude = 1.0;
+
+    for (size_t i = 0; i < numSamples; ++i) {
+        float time = static_cast<float>(i) / samplingRate;
+        sineWave[i] = (amplitude * std::sin(2.0 * M_PI * frequency * time));
+    }
+}
+
+bool done = false;
+void ExamplePluginMeters::run(const float** inputs, float** outputs, uint32_t frames)
+{
+    float tmpLeft = 0.0f;
+    float tmpRight = 0.0f;
+    float tmp = 0.0f;
+
+    numBuffers++;
+    if (!done) {
+        for (int i = 0; i < frames; i++) {
+            rbmsg.buffer[i] = inputs[0][i];
+        }
+        // generateSineWave(rbmsg.buffer, 4440, 96000, 2048);
+        rbmsg.length = 2048;
+        myHeapBuffer.writeCustomType<RbMsg>(rbmsg);
+        myHeapBuffer.commitWrite();
+        // done = true;
+    }
+
+    for (uint32_t i = 0; i < frames; ++i)
+    {
+        // left
+        tmp = std::abs(inputs[0][i]);
+        if (tmp > tmpLeft)
+            tmpLeft = tmp;
+
+        // right
+        tmp = std::abs(inputs[1][i]);
+        if (tmp > tmpRight)
+            tmpRight = tmp;
+    }
+    fOutLeft = tmpLeft;
+    fOutRight = tmpRight;
+
+    // copy inputs over outputs if needed
+    if (outputs[0] != inputs[0])
+        std::memcpy(outputs[0], inputs[0], sizeof(float) * frames);
+
+    if (outputs[1] != inputs[1])
+        std::memcpy(outputs[1], inputs[1], sizeof(float) * frames);
+}
+
+/* ------------------------------------------------------------------------------------------------------------
+ * Plugin entry point, called by DPF to create a new plugin instance.
+ */
+
+Plugin* createPlugin()
+{
+    return new ExamplePluginMeters();
+}
+
+// -----------------------------------------------------------------------------------------------------------
+
+END_NAMESPACE_DISTRHO
