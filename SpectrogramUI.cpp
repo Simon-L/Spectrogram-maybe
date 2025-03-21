@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cassert>
+#include <sys/types.h>
 #include <vector>
 #include <iostream>
 
@@ -42,14 +43,14 @@ struct Columns {
     };
     std::vector<Column> columns;
 
-    bool feed(float* data, size_t length) {
-        bool fed = false;
+    int feed(float* data, size_t length) {
+        int fed = 0;
         for (int i = 0; i < length; i++) {
             buffer.push_back(data[i]);
             if (buffer.size() == consumeThreshold) {
                 processFFT();
                 buffer.clear();
-                fed = true;
+                fed++;
             }
         }
         return fed;
@@ -118,34 +119,57 @@ class SpectrogramUI : public UI,
 {
 public:
     SpectrogramUI()
-        : UI(900, 512),
+        : UI(1280, 512),
           fButton1(this, this)
     {
-// #ifdef DGL_NO_SHARED_RESOURCES
-//         createFontFromFile("sans", "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf");
-// #else
+#ifdef DGL_NO_SHARED_RESOURCES
+        createFontFromFile("sans", "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf");
+#else
         loadSharedResources();
-// #endif
+#endif
 
-        // setupButton(fButton1, 5);
+        setupButton(fButton1, 150);
 
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns.sampleRate = plugin_ptr->getSampleRate();
 
-        knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
-        scale_img = createImageFromFile("_", IMAGE_GENERATE_MIPMAPS);
+        // knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
+        // scale_img = createImageFromFile("_", IMAGE_GENERATE_MIPMAPS);
 
-        knob = new AidaKnob(this, this, knob_img, scale_img);
-        knob->toFront();
+        // dragfloat_topbin = new DragFloat(this, this, knob_img, scale_img);
+        dragfloat_topbin = new DragFloat(this, this);
+        dragfloat_topbin->setAbsolutePos(15,15);
 
-        if (!nimg.isValid()) initImageTest();
+        dragfloat_topbin->setRange(2, 1025);
+        dragfloat_topbin->setDefault(1025);
+        dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
+        dragfloat_topbin->setStep(1);
+        // dragfloat_topbin->setUsingLogScale(true);
+        dragfloat_topbin->label = "Top bin";
+        dragfloat_topbin->unit = "";
+        dragfloat_topbin->toFront();
+
+        dragfloat_botbin = new DragFloat(this, this);
+        dragfloat_botbin->setAbsolutePos(15,60);
+
+        dragfloat_botbin->setRange(0, 1023);
+        dragfloat_botbin->setDefault(0);
+        dragfloat_botbin->setValue(dragfloat_botbin->getDefault(), false);
+        dragfloat_botbin->setStep(1);
+        // dragfloat_botbin->setUsingLogScale(true);
+        dragfloat_botbin->label = "Bottom bin";
+        dragfloat_botbin->unit = "";
+        dragfloat_botbin->toFront();
+
+        if (!nimg.isValid()) initSpectrogramTexture();
 
         setGeometryConstraints(900, 512, false);
     }
 
     NanoImage knob_img;
     NanoImage scale_img;
-    AidaKnob* knob;
+    DragFloat* dragfloat_topbin;
+    DragFloat* dragfloat_botbin;
 
 protected:
    /* --------------------------------------------------------------------------------------------------------
@@ -184,42 +208,57 @@ protected:
         fontSize(15.0f * 1);
         textLineHeight(lineHeight);
 
-        while (plugin_ptr->myHeapBuffer.getReadableDataSize() >= sizeof(RbMsg)) {
-            RbMsg rbmsg = RbMsg();
-            if (plugin_ptr->myHeapBuffer.readCustomType<RbMsg>(rbmsg)) {
-                if (columns.feed(rbmsg.buffer, rbmsg.length)) {
-                    rasterAllColumns(64, 10);
-                    // rasterColumns(columns.columns[0], 128, 64);
-                }
-                // d_stdout("%d %d remaining %d", rbmsg.length, columns.columns[0].size, plugin_ptr->myHeapBuffer.getReadableDataSize()); 
-            }
-        }
-        drawImageTest(128, 16);
+        processRingBuffer();
 
-        // repaint();
+        drawSpectrogramTexture(128, 16);
+
+        beginPath();
+        roundedRect(128, 16, 640, 480, 4);
+        strokeColor(Color(255,255,255,64));
+        stroke();
     }
 
-    void uiIdle() override
+    void processRingBuffer()
     {
         while (plugin_ptr->myHeapBuffer.getReadableDataSize() >= sizeof(RbMsg)) {
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->myHeapBuffer.readCustomType<RbMsg>(rbmsg)) {
-                if (columns.feed(rbmsg.buffer, rbmsg.length)) {
-                    rasterAllColumns(64, 10);
+                if (frozen) continue;
+                auto n = columns.feed(rbmsg.buffer, rbmsg.length);
+                if (n > 0) {
                     repaint();
-                    // rasterColumns(columns.columns[0], 128, 64);
+                    shiftRasteredColumns(64, 10, n);
+                    for (int i = 0; i < n; i++) {
+                        rasterColumn(columns.columns[columns.columns.size() - n + i], ((64 - n + i) * 10), 10);
+                    }
                 }
-                // d_stdout("%d %d remaining %d", rbmsg.length, columns.columns[0].size, plugin_ptr->myHeapBuffer.getReadableDataSize()); 
             }
         }
+
     }
+
+    void uiIdle() override
+    {
+        processRingBuffer();
+    }
+
+    DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, 640, 480);
+    bool frozen = false;
    /**
       Mouse press event.
     */
-    // bool onMouse(const MouseEvent& ev) override
-    // {
-    //     return true;
-    // }
+    bool onMouse(const MouseEvent& ev) override
+    {
+        
+        if (texture_rect.contains(ev.pos) && ev.button == 1 && ev.press == true)
+        {
+            frozen = !frozen;
+            d_stdout("but %d freeze %d", ev.button);
+            return true;
+        }
+
+        return UI::onMouse(ev);
+    }
 
     void onResize(const ResizeEvent& ev) override
     {
@@ -229,12 +268,10 @@ protected:
 
     void buttonClicked(SubWidget* const widget, int) override
     {
-        // if (widget == &fButton1) d_stdout("ya");
-        // d_stdout("ya");
+        if (widget == &fButton1) d_stdout("ya");
 
-        // repaint();
+        repaint();
     }
-
 
     void knobDragStarted(SubWidget* const widget) override
     {
@@ -257,7 +294,8 @@ protected:
 
     void knobDoubleClicked(SubWidget* const widget) override
     {
-        // static_cast<AidaKnob*>(widget)->setValue(kParameters[widget->getId()].ranges.def, true);
+        auto w = static_cast<DragFloat*>(widget);
+        w->setValue(w->getDefault(), true);
     }
 
     // -------------------------------------------------------------------------------------------------------
@@ -278,7 +316,7 @@ private:
     Pixel texture[640][480];
     NanoImage nimg;
     unsigned char data[640*480*4];
-    void initImageTest()
+    void initSpectrogramTexture()
     {
         for (int x = 0; x < 640; x++) {
             for (int y = 0; y < 480; y++) {
@@ -312,7 +350,7 @@ private:
         }
     }
 
-    void drawImageTest(float x, float y)
+    void drawSpectrogramTexture(float x, float y)
     {
         if (nimg.isValid()) {
             unsigned char* px = data;
@@ -340,13 +378,20 @@ private:
     float inverseLerp(float a, float b, float value) { return (value - a) / (b - a); }
     float remap(float value, float fromA, float fromB, float toA, float toB) { return lerp(toA, toB, inverseLerp(fromA, fromB, value)); }
     float interpolate(float x, float* bins, size_t size) const {
-        if (x < 0 || x >= size - 1) {
-            throw std::out_of_range("Index out of range for interpolation");
-        }
         int lowerIndex = static_cast<int>(x);
         int upperIndex = lowerIndex + 1;
         float weight = x - lowerIndex;
         return bins[lowerIndex] * (1 - weight) + bins[upperIndex] * weight;
+    }
+
+    void shiftRasteredColumns(int total_columns, int w, int n_columns)
+    {
+        for (int y = 0; y < 480; y++)
+        {
+            for (int x = 0; x < ((total_columns - n_columns) * w); x++) {
+                texture[x][y] = texture[x + (n_columns * w)][y];
+            }
+        }
     }
 
     void rasterAllColumns(int n_columns, int w)
@@ -362,17 +407,19 @@ private:
 
     void rasterColumn(Columns::Column col, int at_x, int w)
     {
+        float at = dragfloat_botbin->getValue();
+        float step = (dragfloat_topbin->getValue() - at) / 480;
         for (int y = 0; y < 480; y++)
         {
-            float at = float(y/480.0) * col.size;
             float v = interpolate(at, col.bins, col.size);
             uint8_t vv = uint8_t(std::clamp(v, .0f,  255.0f));
             for (int x = at_x; x < at_x + w; x++) {
                 texture[x][479 - y].r = vv;
-                texture[x][479 - y].g = 0;
-                texture[x][479 - y].b = 0;
+                texture[x][479 - y].g = vv;
+                texture[x][479 - y].b = vv;
                 texture[x][479 - y].a = 255;
             }
+            at += step;
         }
     }
 
