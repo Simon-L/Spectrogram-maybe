@@ -116,7 +116,7 @@ public:
     static constexpr const uint kScaleSize = 80;
     static constexpr const uint kKnobSize = 55;
     static constexpr const uint kKnobMargin = (kScaleSize - kKnobSize) / 2;
-    
+
     const char* label;
     const char* unit;
 
@@ -129,9 +129,16 @@ public:
           scaleImage(scaleImg)
     {
         const double scaleFactor = p->getScaleFactor();
-        setSize(95, kSubWidgetsFontSize * 2 + kSubWidgetsPadding);
-
+        setSize(kScaleSize * scaleFactor, kSubWidgetsFullHeight * scaleFactor);
         setCallback(cb);
+
+        setRange(10, 25e3);
+        setAbsolutePos(25,150);
+        setDefault(440);
+        setValue(50, false);
+        setUsingLogScale(true);
+        label = "foo";
+        unit = "bar";
     }
 
 protected:
@@ -141,7 +148,7 @@ protected:
         const uint height = getHeight();
 
         const double scaleFactor = parent->getScaleFactor();
-        const double scaleSize = width * scaleFactor;
+        const double scaleSize = kScaleSize * scaleFactor;
         const double knobSize = kKnobSize * scaleFactor;
         const double knobHalfSize = knobSize / 2;
         const double knobMargin = kKnobMargin * scaleFactor;
@@ -157,37 +164,38 @@ protected:
         textAlign(ALIGN_CENTER | ALIGN_BASELINE);
         text(width/2, height, label, nullptr);
 
-        // const Paint knobImgPat = imagePattern(-knobHalfSize, -knobHalfSize, knobSize, knobSize, 0.f, knobImage, 1.f);
+        const Paint knobImgPat = imagePattern(-knobHalfSize, -knobHalfSize, knobSize, knobSize, 0.f, knobImage, 1.f);
 
-        // save();
-        // translate(knobMargin + knobHalfSize, knobMargin + knobHalfSize);
-        // rotate(degToRad(270.f * (getNormalizedValue() - 0.5f)));
+        save();
+        translate(knobMargin + knobHalfSize, knobMargin + knobHalfSize);
+        rotate(degToRad(270.f * (getNormalizedValue() - 0.5f)));
 
-        // beginPath();
-        // rect(-knobHalfSize, -knobHalfSize, knobSize, knobSize);
-        // fillPaint(knobImgPat);
-        // fill();
-
-        // restore();
-
-        const double padding = 4 * scaleFactor;
         beginPath();
-        roundedRect(padding, 0,
-                    scaleSize - padding,
-                    wfontSize + padding * 2,
-                    2 * scaleFactor);
-        fillColor(Color(0,0,0,0.5f));
-        strokeColor(Color(255,255,255,64));
+        rect(-knobHalfSize, -knobHalfSize, knobSize, knobSize);
+        fillPaint(knobImgPat);
         fill();
-        stroke();
 
-        char textBuf[24];
-        std::snprintf(textBuf, sizeof(textBuf)-1, "%.2f %s", getValue(), unit);
-        textBuf[sizeof(textBuf)-1] = '\0';
+        restore();
 
-        fillColor(Color(1.f, 1.f, 1.f));
-        textAlign(ALIGN_CENTER | ALIGN_TOP);
-        text(width/2, padding, textBuf, nullptr);
+        if (getState() & kKnobStateDragging)
+        {
+            const double padding = 4 * scaleFactor;
+            beginPath();
+            roundedRect(padding, 0,
+                        scaleSize - padding,
+                        wfontSize + padding * 2,
+                        2 * scaleFactor);
+            fillColor(Color(0,0,0,0.5f));
+            fill();
+
+            char textBuf[24];
+            std::snprintf(textBuf, sizeof(textBuf)-1, "%.2f %s", getValue(), unit);
+            textBuf[sizeof(textBuf)-1] = '\0';
+
+            fillColor(Color(1.f, 1.f, 1.f));
+            textAlign(ALIGN_CENTER | ALIGN_TOP);
+            text(width/2, padding, textBuf, nullptr);
+        }
     }
 
     bool onMouse(const MouseEvent& event) override

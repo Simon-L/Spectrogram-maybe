@@ -43,6 +43,8 @@ struct Columns {
     };
     std::vector<Column> columns;
 
+    float fct = 1.0f;
+
     int feed(float* data, size_t length) {
         int fed = 0;
         for (int i = 0; i < length; i++) {
@@ -73,7 +75,7 @@ struct Columns {
             pocketfft::FORWARD,
             buffer.data(),
             reinterpret_cast<std::complex<float>*>(fftOutput.data()),
-            1.0f
+            fct
         );
 
         Column col;
@@ -128,7 +130,7 @@ public:
         loadSharedResources();
 #endif
 
-        setupButton(fButton1, 150);
+        // setupButton(fButton1, 150);
 
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns.sampleRate = plugin_ptr->getSampleRate();
@@ -150,7 +152,7 @@ public:
         dragfloat_topbin->toFront();
 
         dragfloat_botbin = new DragFloat(this, this);
-        dragfloat_botbin->setAbsolutePos(15,60);
+        dragfloat_botbin->setAbsolutePos(15, 15 + (45*1));
 
         dragfloat_botbin->setRange(0, 1023);
         dragfloat_botbin->setDefault(0);
@@ -161,7 +163,18 @@ public:
         dragfloat_botbin->unit = "";
         dragfloat_botbin->toFront();
 
-        if (!nimg.isValid()) initSpectrogramTexture();
+        dragfloat_gain = new DragFloat(this, this);
+        dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
+        dragfloat_gain->setRange(0, 4.0);
+        dragfloat_gain->setDefault(1);
+        dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
+        // dragfloat_gain->setUsingLogScale(true);
+        dragfloat_gain->label = "Gain";
+        dragfloat_gain->unit = "";
+
+
+        if (!nimg.isValid())
+            initSpectrogramTexture();
 
         setGeometryConstraints(900, 512, false);
     }
@@ -170,6 +183,7 @@ public:
     NanoImage scale_img;
     DragFloat* dragfloat_topbin;
     DragFloat* dragfloat_botbin;
+    DragFloat* dragfloat_gain;
 
 protected:
    /* --------------------------------------------------------------------------------------------------------
@@ -287,6 +301,8 @@ protected:
 
     void knobValueChanged(SubWidget* const widget, float value) override
     {
+        if (widget == dragfloat_gain)
+            columns.fct = value;
         // d_stdout("knobValueChanged");
         // setParameterValue(widget->getId(), value);
         repaint();
