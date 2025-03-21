@@ -14,13 +14,13 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "ExamplePluginMeters.hpp"
+#include "Spectrogram.hpp"
 
 START_NAMESPACE_DISTRHO
 
 // -----------------------------------------------------------------------------------------------------------
 
-ExamplePluginMeters::ExamplePluginMeters()
+Spectrogram::Spectrogram()
     : Plugin(3, 0, 0), // 3 parameters, 0 programs, 0 states
       fColor(0.0f),
       fOutLeft(0.0f),
@@ -30,42 +30,42 @@ ExamplePluginMeters::ExamplePluginMeters()
     myHeapBuffer.createBuffer(sizeof(RbMsg) * 64); // 2 seconds of floats @ 48k + 2048 bytes
 }
 
-const char* ExamplePluginMeters::getLabel() const
+const char* Spectrogram::getLabel() const
 {
     return "meters";
 }
 
-const char* ExamplePluginMeters::getDescription() const
+const char* Spectrogram::getDescription() const
 {
     return "Plugin to demonstrate parameter outputs using meters.";
 }
 
-const char* ExamplePluginMeters::getMaker() const
+const char* Spectrogram::getMaker() const
 {
     return "Author Name";
 }
 
-const char* ExamplePluginMeters::getHomePage() const
+const char* Spectrogram::getHomePage() const
 {
     return "https://example.com";
 }
 
-const char* ExamplePluginMeters::getLicense() const
+const char* Spectrogram::getLicense() const
 {
     return "Proprietary";
 }
 
-uint32_t ExamplePluginMeters::getVersion() const
+uint32_t Spectrogram::getVersion() const
 {
     return d_version(1, 0, 0);
 }
 
-void ExamplePluginMeters::sampleRateChanged(double newSampleRate)
+void Spectrogram::sampleRateChanged(double newSampleRate)
 {
     // Handle sample rate change if necessary
 }
 
-void ExamplePluginMeters::initParameter(uint32_t index, Parameter& parameter)
+void Spectrogram::initParameter(uint32_t index, Parameter& parameter)
 {
     /**
         All parameters in this plugin have the same ranges.
@@ -90,9 +90,9 @@ void ExamplePluginMeters::initParameter(uint32_t index, Parameter& parameter)
             parameter.enumValues.values = values;
 
             values[0].label = "Green";
-            values[0].value = METER_COLOR_GREEN;
+            values[0].value = 0;
             values[1].label = "Blue";
-            values[1].value = METER_COLOR_BLUE;
+            values[1].value = 1;
         }
         break;
     case 1:
@@ -108,7 +108,7 @@ void ExamplePluginMeters::initParameter(uint32_t index, Parameter& parameter)
     }
 }
 
-float ExamplePluginMeters::getParameterValue(uint32_t index) const
+float Spectrogram::getParameterValue(uint32_t index) const
 {
     switch (index)
     {
@@ -120,19 +120,19 @@ float ExamplePluginMeters::getParameterValue(uint32_t index) const
     return 0.0f;
 }
 
-void ExamplePluginMeters::setParameterValue(uint32_t index, float value)
+void Spectrogram::setParameterValue(uint32_t index, float value)
 {
     if (index != 0) return;
 
     fColor = value;
 }
 
-void ExamplePluginMeters::initState(uint32_t index, State& state)
+void Spectrogram::initState(uint32_t index, State& state)
 {
     // Initialize states if necessary
 }
 
-void ExamplePluginMeters::setState(const char* key, const char* value)
+void Spectrogram::setState(const char* key, const char* value)
 {
     if (std::strcmp(key, "reset") != 0)
         return;
@@ -150,7 +150,7 @@ void generateSineWave(float* sineWave, float frequency, float samplingRate, cons
 }
 
 bool done = false;
-void ExamplePluginMeters::run(const float** inputs, float** outputs, uint32_t frames)
+void Spectrogram::run(const float** inputs, float** outputs, uint32_t frames)
 {
     float tmpLeft = 0.0f;
     float tmpRight = 0.0f;
@@ -197,7 +197,7 @@ void ExamplePluginMeters::run(const float** inputs, float** outputs, uint32_t fr
 
 Plugin* createPlugin()
 {
-    return new ExamplePluginMeters();
+    return new Spectrogram();
 }
 
 // -----------------------------------------------------------------------------------------------------------

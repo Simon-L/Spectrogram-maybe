@@ -23,7 +23,7 @@
 #include <vector>
 #include <iostream>
 
-#include "ExamplePluginMeters.hpp"
+#include "Spectrogram.hpp"
 
 #include "pocketfft.h"
 
@@ -112,12 +112,12 @@ using DGL_NAMESPACE::Color;
 
 // -----------------------------------------------------------------------------------------------------------
 
-class ExampleUIMeters : public UI,
+class SpectrogramUI : public UI,
                         public ButtonEventHandler::Callback,
                         public KnobEventHandler::Callback
 {
 public:
-    ExampleUIMeters()
+    SpectrogramUI()
         : UI(900, 512),
           fButton1(this, this)
     {
@@ -129,7 +129,7 @@ public:
 
         // setupButton(fButton1, 5);
 
-        plugin_ptr = reinterpret_cast<ExamplePluginMeters*>(getPluginInstancePointer());
+        plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns.sampleRate = plugin_ptr->getSampleRate();
 
         knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
@@ -263,7 +263,7 @@ protected:
     // -------------------------------------------------------------------------------------------------------
 
 private:
-    ExamplePluginMeters* plugin_ptr;
+    Spectrogram* plugin_ptr;
     Columns columns;
 
     Button fButton1;
@@ -379,7 +379,7 @@ private:
    /**
       Set our UI class as non-copyable and add a leak detector just in case.
     */
-    DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ExampleUIMeters)
+    DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrogramUI)
 };
 
 /* ------------------------------------------------------------------------------------------------------------
@@ -387,7 +387,7 @@ private:
 
 UI* createUI()
 {
-    return new ExampleUIMeters();
+    return new SpectrogramUI();
 }
 
 // -----------------------------------------------------------------------------------------------------------

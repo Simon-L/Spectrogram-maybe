@@ -36,10 +36,10 @@ START_NAMESPACE_DISTRHO
 /**
   Plugin to demonstrate parameter outputs using meters.
  */
-class ExamplePluginMeters : public Plugin
+class Spectrogram : public Plugin
 {
 public:
-    ExamplePluginMeters();
+    Spectrogram();
 
     HeapRingBuffer myHeapBuffer;
 
@@ -136,7 +136,7 @@ private:
    /**
       Set our plugin class as non-copyable and add a leak detector just in case.
     */
-    DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ExamplePluginMeters)
+    DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Spectrogram)
 };
 
 // -----------------------------------------------------------------------------------------------------------

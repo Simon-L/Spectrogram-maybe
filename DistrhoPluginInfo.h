@@ -18,12 +18,12 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND   "DISTRHO"
-#define DISTRHO_PLUGIN_NAME    "Meters"
-#define DISTRHO_PLUGIN_URI     "http://distrho.sf.net/examples/Meters"
-#define DISTRHO_PLUGIN_CLAP_ID "studio.kx.distrho.examples.meters"
+#define DISTRHO_PLUGIN_NAME    "Spectrogram"
+#define DISTRHO_PLUGIN_URI     "http://distrho.sf.net/examples/bla"
+#define DISTRHO_PLUGIN_CLAP_ID "studio.kx.distrho.examples.bla"
 
 #define DISTRHO_PLUGIN_BRAND_ID  Dstr
-#define DISTRHO_PLUGIN_UNIQUE_ID dMtr
+#define DISTRHO_PLUGIN_UNIQUE_ID dBla
 
 #define DISTRHO_PLUGIN_HAS_UI          1
 #define DISTRHO_PLUGIN_IS_RT_SAFE      1
@@ -33,9 +33,6 @@
 #define DISTRHO_UI_FILE_BROWSER        0
 #define DISTRHO_UI_USER_RESIZABLE      1
 #define DISTRHO_UI_USE_NANOVG          1
-
-#define METER_COLOR_GREEN 0
-#define METER_COLOR_BLUE  1
 
 #define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
