@@ -24,7 +24,8 @@
 #include <extra/RingBuffer.hpp>
 
 struct RbMsg {
-    float buffer[48000 * sizeof(float) * 2];
+    float buffer_l[48000 * sizeof(float) * 2];
+    float buffer_r[48000 * sizeof(float) * 2];
     uint32_t length;
 };
 

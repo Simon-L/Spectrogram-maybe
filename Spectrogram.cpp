@@ -159,7 +159,8 @@ void Spectrogram::run(const float** inputs, float** outputs, uint32_t frames)
     numBuffers++;
     if (!done) {
         for (int i = 0; i < frames; i++) {
-            rbmsg.buffer[i] = inputs[0][i];
+            rbmsg.buffer_l[i] = inputs[0][i];
+            rbmsg.buffer_r[i] = inputs[1][i];
         }
         // generateSineWave(rbmsg.buffer, 4440, 96000, 2048);
         rbmsg.length = 2048;

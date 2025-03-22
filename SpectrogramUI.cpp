@@ -174,12 +174,8 @@ public:
         // setupButton(fButton1, 150);
 
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
-        columns.sampleRate = plugin_ptr->getSampleRate();
-
-        // knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
-        // scale_img = createImageFromFile("_", IMAGE_GENERATE_MIPMAPS);
-
-        // dragfloat_topbin = new DragFloat(this, this, knob_img, scale_img);
+        columns_l.sampleRate = plugin_ptr->getSampleRate();
+        columns_r.sampleRate = plugin_ptr->getSampleRate();
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
 
@@ -209,13 +205,15 @@ public:
         dragfloat_gain->setRange(0, 15.0);
         dragfloat_gain->setDefault(5);
         dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
-        columns.fct = dragfloat_gain->getValue();
+        columns_l.fct = dragfloat_gain->getValue();
+        columns_r.fct = dragfloat_gain->getValue();
         // dragfloat_gain->setUsingLogScale(true);
         dragfloat_gain->label = "Gain";
         dragfloat_gain->unit = "";
 
 
-        columns.init();
+        columns_l.init();
+        columns_r.init();
 
         if (!nimg.isValid())
             initSpectrogramTexture();
@@ -282,13 +280,16 @@ protected:
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->myHeapBuffer.readCustomType<RbMsg>(rbmsg)) {
                 if (frozen) continue;
-                auto n = columns.feed(rbmsg.buffer, rbmsg.length);
+                auto n = columns_l.feed(rbmsg.buffer_l, rbmsg.length)
+                        + columns_r.feed(rbmsg.buffer_r, rbmsg.length);
                 if (n > 0) {
-                    repaint();
                     shiftRasteredColumns(64, 10, n);
                     for (int i = 0; i < n; i++) {
-                        rasterColumn(columns.columns[columns.columns.size() - n + i], ((64 - n + i) * 10), 10);
+                        rasterColumn<640, 480>(columns_l.columns[columns_l.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_l, color_l);
+                        rasterColumn<640, 480>(columns_r.columns[columns_r.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_r, color_r);
                     }
+                    updateSpectrogramTexture();
+                    repaint();
                 }
             }
         }
@@ -345,8 +346,10 @@ protected:
 
     void knobValueChanged(SubWidget* const widget, float value) override
     {
-        if (widget == dragfloat_gain)
-            columns.fct = value;
+        if (widget == dragfloat_gain) {
+            columns_l.fct = value;
+            columns_r.fct = value;
+        }
         // d_stdout("knobValueChanged");
         // setParameterValue(widget->getId(), value);
         repaint();
@@ -362,7 +365,10 @@ protected:
 
 private:
     Spectrogram* plugin_ptr;
-    Columns columns;
+    Columns columns_l;
+    Color color_l = Color(255,0,0,1);
+    Columns columns_r;
+    Color color_r = Color(0,0,255,1);
 
     Button fButton1;
 
@@ -371,9 +377,21 @@ private:
         uint8_t g;
         uint8_t b;
         uint8_t a;
+
+        static Pixel alpha_compose(Pixel A, Pixel B)
+        {
+            Pixel p;
+            p.r = (A.r * 0.5 + B.r * 0.25) / 0.75;
+            p.g = (A.g * 0.5 + B.g * 0.25) / 0.75;
+            p.b = (A.b * 0.5 + B.b * 0.25) / 0.75;
+
+            p.a = 0.75 * 255;
+            return p;
+        }
     };
 
-    Pixel texture[640][480];
+    Pixel texture_l[640][480];
+    Pixel texture_r[640][480];
     NanoImage nimg;
     unsigned char data[640*480*4];
     void initSpectrogramTexture()
@@ -381,16 +399,16 @@ private:
         for (int x = 0; x < 640; x++) {
             for (int y = 0; y < 480; y++) {
                 if (((y == 479) || (y == 0) || (x == 0) || (x == 639))) {
-                    texture[x][y].r = 0;
-                    texture[x][y].g = 255;
-                    texture[x][y].b = 0;
-                    texture[x][y].a = 255;
+                    texture_l[x][y].r = texture_r[x][y].r = 0;
+                    texture_l[x][y].g = texture_r[x][y].g = 255;
+                    texture_l[x][y].b = texture_r[x][y].b = 0;
+                    texture_l[x][y].a = texture_r[x][y].a = 255;
                 }
                 else {
-                    texture[x][y].r = 0;
-                    texture[x][y].g = 0;
-                    texture[x][y].b = 127;
-                    texture[x][y].a = 255;
+                    texture_l[x][y].r = texture_r[x][y].r = 0;
+                    texture_l[x][y].g = texture_r[x][y].g = 0;
+                    texture_l[x][y].b = texture_r[x][y].b = 127;
+                    texture_l[x][y].a = texture_r[x][y].a = 255;
                 }
             }
         }
@@ -399,10 +417,10 @@ private:
             unsigned char* px = data;
             for (int data_y = 0; data_y < 480; data_y++) {
                 for (int data_x = 0; data_x < 640; data_x++) {
-                    px[0] = texture[data_x][data_y].r;
-                    px[1] = texture[data_x][data_y].g;
-                    px[2] = texture[data_x][data_y].b;
-                    px[3] = texture[data_x][data_y].a;
+                    px[0] = texture_l[data_x][data_y].r;
+                    px[1] = texture_l[data_x][data_y].g;
+                    px[2] = texture_l[data_x][data_y].b;
+                    px[3] = texture_l[data_x][data_y].a;
                     px += 4;
                 }
             }
@@ -410,16 +428,17 @@ private:
         }
     }
 
-    void drawSpectrogramTexture(float x, float y)
+    void updateSpectrogramTexture()
     {
         if (nimg.isValid()) {
             unsigned char* px = data;
             for (int data_y = 0; data_y < 480; data_y++) {
                 for (int data_x = 0; data_x < 640; data_x++) {
-                    px[0] = texture[data_x][data_y].r;
-                    px[1] = texture[data_x][data_y].g;
-                    px[2] = texture[data_x][data_y].b;
-                    px[3] = texture[data_x][data_y].a;
+                    Pixel p = Pixel::alpha_compose(texture_l[data_x][data_y], texture_r[data_x][data_y]);
+                    px[0] = p.r;
+                    px[1] = p.g;
+                    px[2] = p.b;
+                    px[3] = p.a;
                     px += 4;
                 }
             }
@@ -427,6 +446,11 @@ private:
         } else {
             d_stdout("?????");
         }
+    }
+
+    void drawSpectrogramTexture(float x, float y)
+    {
+        if (!nimg.isValid()) return;
 
         beginPath();
         rect(x, y, 640, 480);
@@ -449,23 +473,14 @@ private:
         for (int y = 0; y < 480; y++)
         {
             for (int x = 0; x < ((total_columns - n_columns) * w); x++) {
-                texture[x][y] = texture[x + (n_columns * w)][y];
+                texture_l[x][y] = texture_l[x + (n_columns * w)][y];
+                texture_r[x][y] = texture_r[x + (n_columns * w)][y];
             }
         }
     }
 
-    void rasterAllColumns(int n_columns, int w)
-    {
-        int at_x = 640 - w;
-        for (int i = 0; i < n_columns; i++) {
-            int col_index = columns.columns.size() - i - 1;
-            if (col_index < 0) break;
-            rasterColumn(columns.columns[col_index], at_x, w);
-            at_x -= w;
-        }
-    }
-
-    void rasterColumn(Columns::Column col, int at_x, int w)
+    template <size_t size_x, size_t size_y>
+    void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], Color color)
     {
         float at = dragfloat_botbin->getValue();
         float step = (dragfloat_topbin->getValue() - at) / 480;
@@ -474,10 +489,10 @@ private:
             float v = interpolate(at, col.bins, col.size);
             uint8_t vv = uint8_t(std::clamp(v, .0f,  255.0f));
             for (int x = at_x; x < at_x + w; x++) {
-                texture[x][479 - y].r = vv;
-                texture[x][479 - y].g = vv;
-                texture[x][479 - y].b = vv;
-                texture[x][479 - y].a = 255;
+                tex[x][479 - y].r = vv * color.red;
+                tex[x][479 - y].g = vv * color.green;
+                tex[x][479 - y].b = vv * color.blue;
+                tex[x][479 - y].a = 255; // * color.alpha;
             }
             at += step;
         }
