@@ -176,6 +176,23 @@ public:
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns_l.sampleRate = plugin_ptr->getSampleRate();
         columns_r.sampleRate = plugin_ptr->getSampleRate();
+
+        knob_img = createImageFromFile("knob.png", IMAGE_GENERATE_MIPMAPS);
+        scale_img = createImageFromFile("_", IMAGE_GENERATE_MIPMAPS);
+        knob = new AidaKnob(this, this, knob_img, scale_img);
+        knob->setStep(1);
+        knob->setRange(0, 1);
+        knob->setAbsolutePos(25,150);
+        knob->setDefault(0);
+        knob->setValue(0, false);
+        // knob->setUsingLogScale(true);
+        knob->label = "Channel select";
+        knob->unit = "";
+        // knob->setAbsolutePos(15, 15 + (45*3));
+        // knob->setRange(0, 1.0);
+        // knob->setDefault(0);
+        // knob->setValue(knob->getDefault(), false);
+
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
 
@@ -199,7 +216,7 @@ public:
         dragfloat_botbin->label = "Bottom bin";
         dragfloat_botbin->unit = "";
         dragfloat_botbin->toFront();
-
+        
         dragfloat_gain = new DragFloat(this, this);
         dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
         dragfloat_gain->setRange(0, 15.0);
@@ -211,6 +228,11 @@ public:
         dragfloat_gain->label = "Gain";
         dragfloat_gain->unit = "";
 
+        // // dragfloat_gain->setStep(1);
+        // dragfloat_gain->setUsingLogScale(true);
+        // dragfloat_gain->label = "Gain";
+        // dragfloat_gain->unit = "";
+        // dragfloat_gain->toFront();
 
         columns_l.init();
         columns_r.init();
@@ -226,6 +248,7 @@ public:
     DragFloat* dragfloat_topbin;
     DragFloat* dragfloat_botbin;
     DragFloat* dragfloat_gain;
+    AidaKnob* knob;
 
 protected:
    /* --------------------------------------------------------------------------------------------------------

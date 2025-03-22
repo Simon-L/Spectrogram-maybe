@@ -131,14 +131,6 @@ public:
         const double scaleFactor = p->getScaleFactor();
         setSize(kScaleSize * scaleFactor, kSubWidgetsFullHeight * scaleFactor);
         setCallback(cb);
-
-        setRange(10, 25e3);
-        setAbsolutePos(25,150);
-        setDefault(440);
-        setValue(50, false);
-        setUsingLogScale(true);
-        label = "foo";
-        unit = "bar";
     }
 
 protected:
