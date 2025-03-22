@@ -31,9 +31,42 @@
 #include "NanoButton.hpp"
 #include "Widgets.hpp"
 
+// https://github.com/sidneycadot/WindowFunctions/blob/master/c99/window_functions.c
+void cosine_window(float * w, unsigned n, const float * coeff, unsigned ncoeff, bool sflag)
+{
+    if (n == 1)
+    {
+        // Special case for n == 1.
+        w[0] = 1.0;
+    }
+    else
+    {
+        const unsigned wlength = sflag ? (n - 1) : n;
+
+        for (unsigned i = 0; i < n; ++i)
+        {
+            float wi = 0.0;
+
+            for (unsigned j = 0; j < ncoeff; ++j)
+            {
+                wi += coeff[j] * cos(i * j * 2.0 * M_PI / wlength);
+            }
+
+            w[i] = wi;
+        }
+    }
+}
+
+void hann(float * w, unsigned n, bool sflag)
+{
+    const float coeff[2] = { 0.5, -0.5 };
+    cosine_window(w, n, coeff, sizeof(coeff) / sizeof(float), sflag);
+}
+
 struct Columns {
     std::vector<float> buffer;
     uint32_t consumeThreshold = 2048;
+    float window[2048];
     float sampleRate;
 
     struct Column {
@@ -45,11 +78,19 @@ struct Columns {
 
     float fct = 1.0f;
 
+    void init()
+    {
+        hann(window, consumeThreshold, true);
+    }
+
     int feed(float* data, size_t length) {
         int fed = 0;
         for (int i = 0; i < length; i++) {
             buffer.push_back(data[i]);
             if (buffer.size() == consumeThreshold) {
+                for (int i = 0; i < consumeThreshold; i++) 
+                    buffer[i] = buffer[i] * window[i];
+                
                 processFFT();
                 buffer.clear();
                 fed++;
@@ -143,7 +184,7 @@ public:
         dragfloat_topbin->setAbsolutePos(15,15);
 
         dragfloat_topbin->setRange(2, 1025);
-        dragfloat_topbin->setDefault(1025);
+        dragfloat_topbin->setDefault(200);
         dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
         dragfloat_topbin->setStep(1);
         // dragfloat_topbin->setUsingLogScale(true);
@@ -165,13 +206,16 @@ public:
 
         dragfloat_gain = new DragFloat(this, this);
         dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
-        dragfloat_gain->setRange(0, 4.0);
-        dragfloat_gain->setDefault(1);
+        dragfloat_gain->setRange(0, 15.0);
+        dragfloat_gain->setDefault(5);
         dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
+        columns.fct = dragfloat_gain->getValue();
         // dragfloat_gain->setUsingLogScale(true);
         dragfloat_gain->label = "Gain";
         dragfloat_gain->unit = "";
 
+
+        columns.init();
 
         if (!nimg.isValid())
             initSpectrogramTexture();
