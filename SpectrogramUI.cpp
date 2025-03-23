@@ -141,15 +141,15 @@ struct Columns {
             if (magnitude > peakMag) { peakMag = magnitude; peakIndex = i; }
             col.bins[i] = magnitude;
         }
-        
-        // max_size accounts for some excedent, half of the max_size oldest columns get removed
-        auto max_size = window_size *  2;
-        if (columns.size() > max_size ) {
-            columns.erase(columns.begin(), columns.begin() + (max_size / 2));
-        }
 
+        // columns_memory_size accounts for some excedent, half of the columns_memory_size oldest columns get removed
+        if (columns.size() > columns_memory_size ) {
+            columns.erase(columns.begin(), columns.begin() + (columns_memory_size / 2));
+        }
+        
         columns.push_back(col);
     }
+    int columns_memory_size = 8192;
 };
 
 START_NAMESPACE_DISTRHO
@@ -307,6 +307,8 @@ protected:
    /**
       The NanoVG drawing function.
     */
+    bool request_raster_all = false;
+    int since_last_raster = -1;
     int requested_window_size = -1;
     void onNanoDisplay() override
     {
@@ -336,6 +338,13 @@ protected:
             initSpectrogramTexture();
             updateSpectrogramTexture();
         }
+
+        if (request_raster_all && (since_last_raster > 4)) {
+            rasterAllColumns();
+            request_raster_all = false;
+            since_last_raster = 0;
+        }
+        since_last_raster++;
 
         processRingBuffer();
 
@@ -374,7 +383,21 @@ protected:
                 }
             }
         }
-
+        
+    }
+    
+    void rasterAllColumns()
+    {
+        auto l_data = columns_l.columns;
+        auto r_data = columns_r.columns;
+        unsigned int n = std::min(columns_l.columns.size(), static_cast<size_t>(texture_w / column_w));
+        unsigned int start = static_cast<size_t>(texture_w / column_w) - n;
+        for (int i = start; i < n; i++) {
+            rasterColumn<texture_w, texture_h>(l_data.at(columns_l.columns.size() - n + i), (i * column_w), column_w, texture_l, color_l);
+            rasterColumn<texture_w, texture_h>(r_data.at(columns_r.columns.size() - n + i), (i * column_w), column_w, texture_r, color_r);
+        }
+        updateSpectrogramTexture();
+        repaint();
     }
 
     void uiIdle() override
@@ -435,11 +458,13 @@ protected:
             topbin = std::min(float(window_size / 2 + 1), value);
             topbin = std::max(botbin, topbin);
             w->setValue(topbin);
+            request_raster_all = true;
         }
         if (w == dragfloat_botbin) {
             botbin = std::min(float(window_size / 2 + 1), value);
             botbin = std::min(botbin, topbin);
             w->setValue(botbin);
+            request_raster_all = true;
         }
         if (w == dragfloat_windowsize) {
             requested_window_size = to_window_size_po2(value);
