@@ -27,7 +27,7 @@ Spectrogram::Spectrogram()
       fOutRight(0.0f),
       fNeedsReset(true)
 {
-    myHeapBuffer.createBuffer(sizeof(RbMsg) * 64); // 2 seconds of floats @ 48k + 2048 bytes
+    ring_buffer.createBuffer(sizeof(RbMsg) * 64); // 2 seconds of floats @ 48k + 2048 bytes
 }
 
 const char* Spectrogram::getLabel() const

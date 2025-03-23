@@ -141,10 +141,14 @@ struct Columns {
             if (magnitude > peakMag) { peakMag = magnitude; peakIndex = i; }
             col.bins[i] = magnitude;
         }
-        columns.push_back(col);
-        while (columns.size() > 2048) {
-            columns.erase(columns.begin());
+        
+        // max_size accounts for some excedent, half of the max_size oldest columns get removed
+        auto max_size = 2048;
+        if (columns.size() > max_size ) {
+            columns.erase(columns.begin(), columns.begin() + (max_size / 2));
         }
+
+        columns.push_back(col);
     }
 };
 
@@ -323,23 +327,22 @@ protected:
 
     void processRingBuffer()
     {
-        while (plugin_ptr->myHeapBuffer.getReadableDataSize() >= sizeof(RbMsg)) {
+        while (plugin_ptr->ring_buffer.getReadableDataSize() >= sizeof(RbMsg)) {
             RbMsg rbmsg = RbMsg();
-            if (plugin_ptr->myHeapBuffer.readCustomType<RbMsg>(rbmsg)) {
+            if (plugin_ptr->ring_buffer.readCustomType<RbMsg>(rbmsg)) {
                 if (frozen) continue;
                 auto n = columns_l.feed(rbmsg.buffer_l, rbmsg.length);
                 n = columns_r.feed(rbmsg.buffer_r, rbmsg.length);
+                auto l_data = columns_l.columns.data();
+                auto r_data = columns_r.columns.data();
                 if (n > 0) {
                     shiftRasteredColumns(64, 10, n);
                     for (int i = 0; i < n; i++) {
-                        // d_stdout("4 %d/%d size:%d %d at_x %d", i, n, columns_l.columns.size(), columns_l.columns.size() - n + i, ((64 - n + i) * 10));
-                        rasterColumn<640, 480>(columns_l.columns[columns_l.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_l, color_l);
-                        // d_stdout("5");
-                        rasterColumn<640, 480>(columns_r.columns[columns_r.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_r, color_r);
+                        rasterColumn<640, 480>(l_data[columns_l.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_l, color_l);
+                        rasterColumn<640, 480>(r_data[columns_r.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_r, color_r);
                     }
                     updateSpectrogramTexture();
                     repaint();
-                    // d_stdout("pushed %d and got %d new columns", rbmsg.length, n);
                 }
             }
         }
