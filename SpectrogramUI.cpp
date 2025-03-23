@@ -261,6 +261,7 @@ public:
         dragfloat_windowsize->label = "Window size";
         dragfloat_windowsize->unit = "";
         
+        binAtCursor(Point<double>(0,0));
 
         if (!nimg.isValid())
             initSpectrogramTexture();
@@ -355,6 +356,8 @@ protected:
         strokeColor(Color(255,255,255,64));
         stroke();
 
+        text(128 + texture_w + 10, 16 + lineHeight, cursor_text, nullptr);
+
         if (frozen) {
             text(128 + (texture_w/2), 500, frozen_text, nullptr);
         }
@@ -385,6 +388,17 @@ protected:
         }
         
     }
+
+    int cursor_x = 0;
+    int cursor_y = 0;
+    char cursor_text[54];
+    void binAtCursor(Point<double> pos)
+    {
+        cursor_x = pos.getX() - texture_rect.getX();
+        cursor_y = pos.getY() - texture_rect.getY();
+        std::snprintf(cursor_text, 53, "cursor x: %d y: %d", cursor_x, cursor_y);
+        cursor_text[53] = '\0';
+    }
     
     void rasterAllColumns()
     {
@@ -408,9 +422,19 @@ protected:
 
     DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, texture_w, texture_h);
     bool frozen = false;
+
    /**
-      Mouse press event.
+      Mouse events.
     */
+    bool onMotion(const MotionEvent& ev) override
+    {
+        if (texture_rect.contains(ev.pos))
+        {
+            binAtCursor(ev.pos);
+        }
+        return UI::onMotion(ev);
+    }
+
     bool onMouse(const MouseEvent& ev) override
     {
         
