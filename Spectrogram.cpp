@@ -60,11 +60,6 @@ uint32_t Spectrogram::getVersion() const
     return d_version(1, 0, 0);
 }
 
-void Spectrogram::sampleRateChanged(double newSampleRate)
-{
-    // Handle sample rate change if necessary
-}
-
 void Spectrogram::initParameter(uint32_t index, Parameter& parameter)
 {
     /**
@@ -140,49 +135,37 @@ void Spectrogram::setState(const char* key, const char* value)
     fNeedsReset = true;
 }
 
-void generateSineWave(float* sineWave, float frequency, float samplingRate, const size_t numSamples) {
-    const float amplitude = 1.0;
-
-    for (size_t i = 0; i < numSamples; ++i) {
-        float time = static_cast<float>(i) / samplingRate;
-        sineWave[i] = (amplitude * std::sin(2.0 * M_PI * frequency * time));
-    }
+void Spectrogram::bufferSizeChanged (uint32_t newBufferSize)
+{
+    d_stdout("buffser changed %d", newBufferSize);
 }
 
-bool done = false;
+void Spectrogram::sampleRateChanged (double	newSampleRate)
+{
+    d_stdout("samplerate changed %f", newSampleRate);
+}
+
+void Spectrogram::deactivate()
+{
+    d_stdout("deactivated :(");
+}
+
+void Spectrogram::activate()
+{
+    d_stdout("%f %d ", getSampleRate(), getBufferSize());
+}
+
 void Spectrogram::run(const float** inputs, float** outputs, uint32_t frames)
 {
-    float tmpLeft = 0.0f;
-    float tmpRight = 0.0f;
-    float tmp = 0.0f;
-
-    numBuffers++;
-    if (!done) {
+    if (ring_buffer.getWritableDataSize() >= sizeof(RbMsg)) {
         for (int i = 0; i < frames; i++) {
             rbmsg.buffer_l[i] = inputs[0][i];
             rbmsg.buffer_r[i] = inputs[1][i];
         }
-        // generateSineWave(rbmsg.buffer, 4440, 96000, 2048);
-        rbmsg.length = 2048;
-        myHeapBuffer.writeCustomType<RbMsg>(rbmsg);
-        myHeapBuffer.commitWrite();
-        // done = true;
+        rbmsg.length = frames;
+        ring_buffer.writeCustomType<RbMsg>(rbmsg);
+        ring_buffer.commitWrite();
     }
-
-    for (uint32_t i = 0; i < frames; ++i)
-    {
-        // left
-        tmp = std::abs(inputs[0][i]);
-        if (tmp > tmpLeft)
-            tmpLeft = tmp;
-
-        // right
-        tmp = std::abs(inputs[1][i]);
-        if (tmp > tmpRight)
-            tmpRight = tmp;
-    }
-    fOutLeft = tmpLeft;
-    fOutRight = tmpRight;
 
     // copy inputs over outputs if needed
     if (outputs[0] != inputs[0])

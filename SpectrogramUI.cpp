@@ -65,8 +65,8 @@ void hann(float * w, unsigned n, bool sflag)
 
 struct Columns {
     std::vector<float> buffer;
-    uint32_t consumeThreshold = 2048;
-    float window[2048];
+    uint32_t window_size;
+    std::vector<float> *window;
     float sampleRate;
 
     struct Column {
@@ -78,36 +78,49 @@ struct Columns {
 
     float fct = 1.0f;
 
-    void init()
+    void init(std::vector<float> *_window, int _window_size)
     {
-        hann(window, consumeThreshold, true);
+        window = _window;
+        window_size = _window_size;
+        buffer.clear();
     }
 
     int feed(float* data, size_t length) {
         int fed = 0;
-        for (int i = 0; i < length; i++) {
-            buffer.push_back(data[i]);
-            if (buffer.size() == consumeThreshold) {
-                for (int i = 0; i < consumeThreshold; i++) 
-                    buffer[i] = buffer[i] * window[i];
+        if (buffer.size() + length < window_size) {
+            buffer.insert(buffer.end(), data, data + length);
+        } else {
+            int available = length;
+            int idx = 0;
+            while ((buffer.size() + available) >= window_size)
+            {
+                auto eat = window_size - buffer.size();
+                buffer.insert(buffer.end(), data + idx, data + idx + eat);
+                idx += eat;
+                available -= eat;
+                if (buffer.size() == window_size) {
+                    for (int i = 0; i < window_size; i++) {
+                        buffer[i] = buffer[i] * window->data()[i];
+                    }
                 
-                processFFT();
-                buffer.clear();
-                fed++;
+                    processFFT();
+                    buffer.clear();
+                    fed++;
+                }
             }
         }
         return fed;
     }
 
     std::vector<std::complex<float>> fftOutput;
-    pocketfft::shape_t shape{consumeThreshold};
+    pocketfft::shape_t shape{window_size};
     pocketfft::stride_t stride_in{sizeof(float)}; 
     pocketfft::stride_t stride_out{sizeof(std::complex<float>)}; 
 
     void processFFT() {
         shape[0] = buffer.size();
         fftOutput.clear();
-        fftOutput.resize(consumeThreshold / 2 + 1);
+        fftOutput.resize(window_size / 2 + 1);
         pocketfft::r2c(
             shape,
             stride_in,
@@ -129,7 +142,7 @@ struct Columns {
             col.bins[i] = magnitude;
         }
         columns.push_back(col);
-        while (columns.size() > 64) {
+        while (columns.size() > 2048) {
             columns.erase(columns.begin());
         }
     }
@@ -167,11 +180,21 @@ public:
     {
 #ifdef DGL_NO_SHARED_RESOURCES
         createFontFromFile("sans", "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf");
-#else
+        #else
         loadSharedResources();
-#endif
-
-        // setupButton(fButton1, 150);
+        #endif
+        
+        botbin = 0;
+        
+        window_size = 512;
+        topbin = window_size / 2 + 1;
+        window.resize(window_size);
+        hann(window.data(), window_size, true);
+        
+        columns_l.init(&window, window_size);
+        columns_r.init(&window, window_size);
+        columns_l.fct = 5;
+        columns_r.fct = 5;
 
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns_l.sampleRate = plugin_ptr->getSampleRate();
@@ -179,8 +202,8 @@ public:
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
 
-        dragfloat_topbin->setRange(2, 1025);
-        dragfloat_topbin->setDefault(200);
+        dragfloat_topbin->setRange(2, 4097);
+        dragfloat_topbin->setDefault(topbin);
         dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
         dragfloat_topbin->setStep(1);
         // dragfloat_topbin->setUsingLogScale(true);
@@ -192,7 +215,7 @@ public:
         dragfloat_botbin->setAbsolutePos(15, 15 + (45*1));
 
         dragfloat_botbin->setRange(0, 1023);
-        dragfloat_botbin->setDefault(0);
+        dragfloat_botbin->setDefault(botbin);
         dragfloat_botbin->setValue(dragfloat_botbin->getDefault(), false);
         dragfloat_botbin->setStep(1);
         // dragfloat_botbin->setUsingLogScale(true);
@@ -203,17 +226,22 @@ public:
         dragfloat_gain = new DragFloat(this, this);
         dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
         dragfloat_gain->setRange(0, 15.0);
-        dragfloat_gain->setDefault(5);
+        dragfloat_gain->setDefault(columns_l.fct);
         dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
-        columns_l.fct = dragfloat_gain->getValue();
-        columns_r.fct = dragfloat_gain->getValue();
         // dragfloat_gain->setUsingLogScale(true);
         dragfloat_gain->label = "Gain";
         dragfloat_gain->unit = "";
-
-
-        columns_l.init();
-        columns_r.init();
+        
+        dragfloat_windowsize = new DragFloatEnumerated(this, this);
+        dragfloat_windowsize->setAbsolutePos(15, 15 + (45*3));
+        dragfloat_windowsize->setRange(0, 7);
+        dragfloat_windowsize->setDefault(4);
+        dragfloat_windowsize->setStep(1);
+        dragfloat_windowsize->setUsingCustomText(true);
+        dragfloat_windowsize->setValue(dragfloat_windowsize->getDefault(), false);
+        dragfloat_windowsize->label = "Window size";
+        dragfloat_windowsize->unit = "";
+        
 
         if (!nimg.isValid())
             initSpectrogramTexture();
@@ -226,6 +254,10 @@ public:
     DragFloat* dragfloat_topbin;
     DragFloat* dragfloat_botbin;
     DragFloat* dragfloat_gain;
+    DragFloatEnumerated* dragfloat_windowsize;
+
+    std::vector<float> window;
+    int window_size;
 
 protected:
    /* --------------------------------------------------------------------------------------------------------
@@ -256,6 +288,7 @@ protected:
    /**
       The NanoVG drawing function.
     */
+    int requested_window_size = -1;
     void onNanoDisplay() override
     {
         const float lineHeight = 20 * 1;
@@ -263,6 +296,20 @@ protected:
 
         fontSize(15.0f * 1);
         textLineHeight(lineHeight);
+
+        if (requested_window_size > 0) {
+            // window_size = requested_window_size;
+            window.resize(window_size);
+            hann(window.data(), window_size, true);
+            columns_l.columns.clear();
+            // columns_l.init(&window, window_size);
+            columns_r.columns.clear();
+            // columns_r.init(&window, window_size);
+            requested_window_size = -1;
+
+            initSpectrogramTexture();
+            updateSpectrogramTexture();
+        }
 
         processRingBuffer();
 
@@ -280,16 +327,19 @@ protected:
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->myHeapBuffer.readCustomType<RbMsg>(rbmsg)) {
                 if (frozen) continue;
-                auto n = columns_l.feed(rbmsg.buffer_l, rbmsg.length)
-                        + columns_r.feed(rbmsg.buffer_r, rbmsg.length);
+                auto n = columns_l.feed(rbmsg.buffer_l, rbmsg.length);
+                n = columns_r.feed(rbmsg.buffer_r, rbmsg.length);
                 if (n > 0) {
                     shiftRasteredColumns(64, 10, n);
                     for (int i = 0; i < n; i++) {
+                        // d_stdout("4 %d/%d size:%d %d at_x %d", i, n, columns_l.columns.size(), columns_l.columns.size() - n + i, ((64 - n + i) * 10));
                         rasterColumn<640, 480>(columns_l.columns[columns_l.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_l, color_l);
+                        // d_stdout("5");
                         rasterColumn<640, 480>(columns_r.columns[columns_r.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_r, color_r);
                     }
                     updateSpectrogramTexture();
                     repaint();
+                    // d_stdout("pushed %d and got %d new columns", rbmsg.length, n);
                 }
             }
         }
@@ -312,7 +362,6 @@ protected:
         if (texture_rect.contains(ev.pos) && ev.button == 1 && ev.press == true)
         {
             frozen = !frozen;
-            d_stdout("but %d freeze %d", ev.button);
             return true;
         }
 
@@ -327,8 +376,6 @@ protected:
 
     void buttonClicked(SubWidget* const widget, int) override
     {
-        if (widget == &fButton1) d_stdout("ya");
-
         repaint();
     }
 
@@ -346,12 +393,24 @@ protected:
 
     void knobValueChanged(SubWidget* const widget, float value) override
     {
-        if (widget == dragfloat_gain) {
+        auto w = static_cast<DragFloat*>(widget);
+        if (w == dragfloat_gain) {
             columns_l.fct = value;
             columns_r.fct = value;
         }
-        // d_stdout("knobValueChanged");
-        // setParameterValue(widget->getId(), value);
+        if (w == dragfloat_topbin) {
+            topbin = std::min(float(window_size / 2 + 1), value);
+            topbin = std::max(botbin, topbin);
+            w->setValue(topbin);
+        }
+        if (w == dragfloat_botbin) {
+            botbin = std::min(float(window_size / 2 + 1), value);
+            botbin = std::min(botbin, topbin);
+            w->setValue(botbin);
+        }
+        if (w == dragfloat_windowsize) {
+            requested_window_size = static_cast<int>(std::pow(2, 7 + static_cast<int>(value)));
+        }
         repaint();
     }
 
@@ -369,6 +428,9 @@ private:
     Color color_l = Color(255,0,0,1);
     Columns columns_r;
     Color color_r = Color(0,0,255,1);
+
+    int botbin;
+    int topbin;
 
     Button fButton1;
 
@@ -482,8 +544,8 @@ private:
     template <size_t size_x, size_t size_y>
     void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], Color color)
     {
-        float at = dragfloat_botbin->getValue();
-        float step = (dragfloat_topbin->getValue() - at) / 480;
+        float at = botbin;
+        float step = (topbin - at) / 480;
         for (int y = 0; y < 480; y++)
         {
             float v = interpolate(at, col.bins, col.size);

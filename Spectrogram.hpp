@@ -42,10 +42,9 @@ class Spectrogram : public Plugin
 public:
     Spectrogram();
 
-    HeapRingBuffer myHeapBuffer;
+    HeapRingBuffer ring_buffer;
 
 protected:
-    uint32_t numBuffers;
     RbMsg rbmsg;
    /* --------------------------------------------------------------------------------------------------------
     * Information */
@@ -85,6 +84,7 @@ protected:
       Optional callback to inform the plugin about a sample rate change.
     */
     void sampleRateChanged(double newSampleRate) override;
+    void bufferSizeChanged(uint32_t newBufferSize) override;
 
    /* --------------------------------------------------------------------------------------------------------
     * Parameters */
@@ -113,6 +113,9 @@ protected:
       Set the state of a parameter.
     */
     void setState(const char* key, const char* value) override;
+
+    void activate() override;
+    void deactivate() override;
 
    /* --------------------------------------------------------------------------------------------------------
     * Process */
