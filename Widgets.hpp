@@ -88,10 +88,14 @@ protected:
         stroke();
 
         char textBuf[24];
-        if (isUsingCustomText())
+        if (isUsingCustomText()) {
             getCustomText(textBuf);
-        else
-            std::snprintf(textBuf, sizeof(textBuf)-1, "%.2f %s", getValue(), unit);
+        } else {
+            if (isInteger())
+                std::snprintf(textBuf, sizeof(textBuf)-1, "%d %s", static_cast<int>(getValue()), unit);
+            else
+                std::snprintf(textBuf, sizeof(textBuf)-1, "%.2f %s", getValue(), unit);
+        }
         textBuf[sizeof(textBuf)-1] = '\0';
         
         fillColor(Color(1.f, 1.f, 1.f));
@@ -222,23 +226,6 @@ public KnobEventHandler
     {
         return KnobEventHandler::scrollEvent(event);
     }
-};
-
-class DragFloatEnumerated : public DragFloat
-{
-public:
-    DragFloatEnumerated(NanoTopLevelWidget* const p, KnobEventHandler::Callback* const cb)
-    : DragFloat(p, cb)
-    {
-    }
-protected:
-    
-    virtual void getCustomText(char dest[24]) {
-        auto v = static_cast<int>(getValue());
-        int vv = static_cast<int>(std::pow(2, 7 + v));
-        std::snprintf(dest, sizeof(dest)-1, "%d", vv);
-    }
-    
 };
 
 // --------------------------------------------------------------------------------------------------------------------

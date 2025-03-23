@@ -143,7 +143,7 @@ struct Columns {
         }
         
         // max_size accounts for some excedent, half of the max_size oldest columns get removed
-        auto max_size = 2048;
+        auto max_size = window_size *  2;
         if (columns.size() > max_size ) {
             columns.erase(columns.begin(), columns.begin() + (max_size / 2));
         }
@@ -178,6 +178,21 @@ class SpectrogramUI : public UI,
                         public KnobEventHandler::Callback
 {
 public:
+
+    class DragFloatWindowsize : public DragFloat
+    {
+    public:
+        DragFloatWindowsize(NanoTopLevelWidget* const p, KnobEventHandler::Callback* const cb)
+        : DragFloat(p, cb)
+        {
+        }
+    protected:
+        virtual void getCustomText(char dest[24]) {
+            std::snprintf(dest, sizeof(dest)-1, "%d", to_window_size_po2(getValue()));
+        }
+        
+    };
+
     SpectrogramUI()
         : UI(1280, 512),
           fButton1(this, this)
@@ -187,10 +202,14 @@ public:
         #else
         loadSharedResources();
         #endif
+
+        for(int i = 0; i < 8; i++) {
+            d_stdout("%d -> %d -> %d", i, to_window_size_po2(i), from_window_size_po2(to_window_size_po2(i)));
+        }
         
         botbin = 0;
         
-        window_size = 512;
+        window_size = 4096;
         topbin = window_size / 2 + 1;
         window.resize(window_size);
         hann(window.data(), window_size, true);
@@ -206,7 +225,7 @@ public:
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
 
-        dragfloat_topbin->setRange(2, 4097);
+        dragfloat_topbin->setRange(2, topbin);
         dragfloat_topbin->setDefault(topbin);
         dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
         dragfloat_topbin->setStep(1);
@@ -218,7 +237,7 @@ public:
         dragfloat_botbin = new DragFloat(this, this);
         dragfloat_botbin->setAbsolutePos(15, 15 + (45*1));
 
-        dragfloat_botbin->setRange(0, 1023);
+        dragfloat_botbin->setRange(0, topbin);
         dragfloat_botbin->setDefault(botbin);
         dragfloat_botbin->setValue(dragfloat_botbin->getDefault(), false);
         dragfloat_botbin->setStep(1);
@@ -236,10 +255,10 @@ public:
         dragfloat_gain->label = "Gain";
         dragfloat_gain->unit = "";
         
-        dragfloat_windowsize = new DragFloatEnumerated(this, this);
+        dragfloat_windowsize = new DragFloatWindowsize(this, this);
         dragfloat_windowsize->setAbsolutePos(15, 15 + (45*3));
         dragfloat_windowsize->setRange(0, 7);
-        dragfloat_windowsize->setDefault(4);
+        dragfloat_windowsize->setDefault(from_window_size_po2(window_size));
         dragfloat_windowsize->setStep(1);
         dragfloat_windowsize->setUsingCustomText(true);
         dragfloat_windowsize->setValue(dragfloat_windowsize->getDefault(), false);
@@ -258,7 +277,7 @@ public:
     DragFloat* dragfloat_topbin;
     DragFloat* dragfloat_botbin;
     DragFloat* dragfloat_gain;
-    DragFloatEnumerated* dragfloat_windowsize;
+    DragFloatWindowsize* dragfloat_windowsize;
 
     std::vector<float> window;
     int window_size;
@@ -302,14 +321,21 @@ protected:
         textLineHeight(lineHeight);
 
         if (requested_window_size > 0) {
-            // window_size = requested_window_size;
+            window_size = requested_window_size;
             window.resize(window_size);
             hann(window.data(), window_size, true);
             columns_l.columns.clear();
-            // columns_l.init(&window, window_size);
+            columns_l.init(&window, window_size);
             columns_r.columns.clear();
-            // columns_r.init(&window, window_size);
+            columns_r.init(&window, window_size);
             requested_window_size = -1;
+
+            topbin = (window_size / 2 + 1);
+            dragfloat_topbin->setRange(2, (window_size / 2 + 1));
+            dragfloat_topbin->setValue(topbin);
+            botbin = 0;
+            dragfloat_botbin->setRange(0, (window_size / 2 + 1));
+            dragfloat_botbin->setValue(botbin);
 
             initSpectrogramTexture();
             updateSpectrogramTexture();
@@ -352,6 +378,7 @@ protected:
     void uiIdle() override
     {
         processRingBuffer();
+        if (window_size >= 4096) repaint();
     }
 
     DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, 640, 480);
@@ -365,6 +392,7 @@ protected:
         if (texture_rect.contains(ev.pos) && ev.button == 1 && ev.press == true)
         {
             frozen = !frozen;
+            if (!frozen) repaint();
             return true;
         }
 
@@ -412,7 +440,7 @@ protected:
             w->setValue(botbin);
         }
         if (w == dragfloat_windowsize) {
-            requested_window_size = static_cast<int>(std::pow(2, 7 + static_cast<int>(value)));
+            requested_window_size = to_window_size_po2(value);
         }
         repaint();
     }
@@ -422,6 +450,9 @@ protected:
         auto w = static_cast<DragFloat*>(widget);
         w->setValue(w->getDefault(), true);
     }
+
+    static int to_window_size_po2(float value) { return static_cast<int>(std::pow(2, 7 + static_cast<int>(value))); }
+    static int from_window_size_po2(int value) { return std::log2(value) - 7; }
 
     // -------------------------------------------------------------------------------------------------------
 
