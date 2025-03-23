@@ -345,7 +345,13 @@ protected:
         roundedRect(128, 16, texture_w, texture_h, 4);
         strokeColor(Color(255,255,255,64));
         stroke();
+
+        if (frozen) {
+            text(128 + (texture_w/2), 500, frozen_text, nullptr);
+        }
     }
+
+    const char* frozen_text = "frozen";
 
     void processRingBuffer()
     {
