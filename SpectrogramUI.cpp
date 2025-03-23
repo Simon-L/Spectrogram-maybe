@@ -203,13 +203,9 @@ public:
         loadSharedResources();
         #endif
 
-        for(int i = 0; i < 8; i++) {
-            d_stdout("%d -> %d -> %d", i, to_window_size_po2(i), from_window_size_po2(to_window_size_po2(i)));
-        }
-        
         botbin = 0;
         
-        window_size = 4096;
+        window_size = 1024;
         topbin = window_size / 2 + 1;
         window.resize(window_size);
         hann(window.data(), window_size, true);
@@ -346,7 +342,7 @@ protected:
         drawSpectrogramTexture(128, 16);
 
         beginPath();
-        roundedRect(128, 16, 640, 480, 4);
+        roundedRect(128, 16, texture_w, texture_h, 4);
         strokeColor(Color(255,255,255,64));
         stroke();
     }
@@ -362,10 +358,10 @@ protected:
                 auto l_data = columns_l.columns.data();
                 auto r_data = columns_r.columns.data();
                 if (n > 0) {
-                    shiftRasteredColumns(64, 10, n);
+                    shiftRasteredColumns((texture_w / column_w), column_w, n);
                     for (int i = 0; i < n; i++) {
-                        rasterColumn<640, 480>(l_data[columns_l.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_l, color_l);
-                        rasterColumn<640, 480>(r_data[columns_r.columns.size() - n + i], ((64 - n + i) * 10), 10, texture_r, color_r);
+                        rasterColumn<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], (((texture_w / column_w) - n + i) * column_w), column_w, texture_l, color_l);
+                        rasterColumn<texture_w, texture_h>(r_data[columns_r.columns.size() - n + i], (((texture_w / column_w) - n + i) * column_w), column_w, texture_r, color_r);
                     }
                     updateSpectrogramTexture();
                     repaint();
@@ -381,7 +377,7 @@ protected:
         if (window_size >= 4096) repaint();
     }
 
-    DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, 640, 480);
+    DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, texture_w, texture_h);
     bool frozen = false;
    /**
       Mouse press event.
@@ -466,6 +462,10 @@ private:
     int botbin;
     int topbin;
 
+    static constexpr int texture_w = 1000;
+    static constexpr int texture_h = 460;
+    static constexpr int column_w = 5;
+
     Button fButton1;
 
     struct Pixel{
@@ -486,15 +486,15 @@ private:
         }
     };
 
-    Pixel texture_l[640][480];
-    Pixel texture_r[640][480];
+    Pixel texture_l[texture_w][texture_h];
+    Pixel texture_r[texture_w][texture_h];
     NanoImage nimg;
-    unsigned char data[640*480*4];
+    unsigned char data[texture_w*texture_h*4];
     void initSpectrogramTexture()
     {
-        for (int x = 0; x < 640; x++) {
-            for (int y = 0; y < 480; y++) {
-                if (((y == 479) || (y == 0) || (x == 0) || (x == 639))) {
+        for (int x = 0; x < texture_w; x++) {
+            for (int y = 0; y < texture_h; y++) {
+                if (((y == (texture_h - 1)) || (y == 0) || (x == 0) || (x == (texture_w - 1)))) {
                     texture_l[x][y].r = texture_r[x][y].r = 0;
                     texture_l[x][y].g = texture_r[x][y].g = 255;
                     texture_l[x][y].b = texture_r[x][y].b = 0;
@@ -511,8 +511,8 @@ private:
 
         if (!nimg.isValid()) {
             unsigned char* px = data;
-            for (int data_y = 0; data_y < 480; data_y++) {
-                for (int data_x = 0; data_x < 640; data_x++) {
+            for (int data_y = 0; data_y < texture_h; data_y++) {
+                for (int data_x = 0; data_x < texture_w; data_x++) {
                     px[0] = texture_l[data_x][data_y].r;
                     px[1] = texture_l[data_x][data_y].g;
                     px[2] = texture_l[data_x][data_y].b;
@@ -520,7 +520,7 @@ private:
                     px += 4;
                 }
             }
-            nimg = createImageFromRGBA(640, 480, data, 0);
+            nimg = createImageFromRGBA(texture_w, texture_h, data, 0);
         }
     }
 
@@ -528,8 +528,8 @@ private:
     {
         if (nimg.isValid()) {
             unsigned char* px = data;
-            for (int data_y = 0; data_y < 480; data_y++) {
-                for (int data_x = 0; data_x < 640; data_x++) {
+            for (int data_y = 0; data_y < texture_h; data_y++) {
+                for (int data_x = 0; data_x < texture_w; data_x++) {
                     Pixel p = Pixel::alpha_compose(texture_l[data_x][data_y], texture_r[data_x][data_y]);
                     px[0] = p.r;
                     px[1] = p.g;
@@ -549,8 +549,8 @@ private:
         if (!nimg.isValid()) return;
 
         beginPath();
-        rect(x, y, 640, 480);
-        fillPaint(imagePattern(x, y, 640, 480, 0, nimg, 1.0f));
+        rect(x, y, texture_w, texture_h);
+        fillPaint(imagePattern(x, y, texture_w, texture_h, 0, nimg, 1.0f));
         fill();
     }
 
@@ -566,7 +566,7 @@ private:
 
     void shiftRasteredColumns(int total_columns, int w, int n_columns)
     {
-        for (int y = 0; y < 480; y++)
+        for (int y = 0; y < texture_h; y++)
         {
             for (int x = 0; x < ((total_columns - n_columns) * w); x++) {
                 texture_l[x][y] = texture_l[x + (n_columns * w)][y];
@@ -579,16 +579,16 @@ private:
     void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], Color color)
     {
         float at = botbin;
-        float step = (topbin - at) / 480;
-        for (int y = 0; y < 480; y++)
+        float step = (topbin - at) / texture_h;
+        for (int y = 0; y < texture_h; y++)
         {
             float v = interpolate(at, col.bins, col.size);
             uint8_t vv = uint8_t(std::clamp(v, .0f,  255.0f));
             for (int x = at_x; x < at_x + w; x++) {
-                tex[x][479 - y].r = vv * color.red;
-                tex[x][479 - y].g = vv * color.green;
-                tex[x][479 - y].b = vv * color.blue;
-                tex[x][479 - y].a = 255; // * color.alpha;
+                tex[x][(texture_h - 1) - y].r = vv * color.red;
+                tex[x][(texture_h - 1) - y].g = vv * color.green;
+                tex[x][(texture_h - 1) - y].b = vv * color.blue;
+                tex[x][(texture_h - 1) - y].a = 255; // * color.alpha;
             }
             at += step;
         }
