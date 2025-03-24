@@ -487,12 +487,20 @@ protected:
     {
         auto l_data = columns_l.columns;
         auto r_data = columns_r.columns;
-        unsigned int n = std::min(columns_l.columns.size(), static_cast<size_t>(n_columns));
-        unsigned int start = static_cast<size_t>(n_columns) - n;
-        for (int i = start; i < n; i++) {
-            rasterColumn<texture_w, texture_h>(l_data.at(columns_l.columns.size() - n + i), (i * column_w), column_w, texture_l, color_l);
-            rasterColumn<texture_w, texture_h>(r_data.at(columns_r.columns.size() - n + i), (i * column_w), column_w, texture_r, color_r);
+        auto columns_size = columns_l.columns.size();
+        int start_col = 0;
+        int end_col = n_columns;
+        if (columns_size < n_columns)
+        {
+            start_col = n_columns - columns_size;
+            end_col = columns_size;
         }
+        for (int i = 0; i < end_col; i++) {
+            auto col_x = (columns_size < n_columns) ? i : (columns_size - n_columns + i);
+            rasterColumn<texture_w, texture_h>(l_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, color_l);
+            rasterColumn<texture_w, texture_h>(r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_r, color_r);
+        }
+
         updateSpectrogramTexture();
         repaint();
     }
