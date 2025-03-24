@@ -70,9 +70,17 @@ struct Columns {
     float sampleRate;
 
     struct Column {
-        float bins[4096];
+        std::vector<float> bins;
+        std::vector<float> bins_phase;
         size_t size;
         bool processed = false;
+        float peakFrequency;
+
+        Column(size_t size) {
+            bins.resize(size);
+            bins_phase.resize(size);
+            this->size = size;
+        }
     };
     std::vector<Column> columns;
 
@@ -132,15 +140,16 @@ struct Columns {
             fct
         );
 
-        Column col;
-        col.size = fftOutput.size();
+        Column col(fftOutput.size());
         int peakIndex = 0;
         float peakMag = 0;
         for (size_t i = 0; i < fftOutput.size(); ++i) {
             float magnitude = std::abs(fftOutput[i]);
             if (magnitude > peakMag) { peakMag = magnitude; peakIndex = i; }
             col.bins[i] = magnitude;
+            col.bins_phase[i] = std::arg(fftOutput[i]);
         }
+        col.peakFrequency = peakIndex * (sampleRate / fftOutput.size() / 2);
 
         // columns_memory_size accounts for some excedent, half of the columns_memory_size oldest columns get removed
         if (columns.size() > columns_memory_size ) {
@@ -209,15 +218,18 @@ public:
         topbin = window_size / 2 + 1;
         window.resize(window_size);
         hann(window.data(), window_size, true);
+
+        std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin));
+        std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin));
         
         columns_l.init(&window, window_size);
         columns_r.init(&window, window_size);
-        columns_l.fct = 5;
-        columns_r.fct = 5;
+        columns_l.fct = 1;
+        columns_r.fct = 1;
 
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
-        columns_l.sampleRate = plugin_ptr->getSampleRate();
-        columns_r.sampleRate = plugin_ptr->getSampleRate();
+        columns_l.sampleRate = getSampleRate();
+        columns_r.sampleRate = getSampleRate();
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
 
@@ -261,7 +273,7 @@ public:
         dragfloat_windowsize->label = "Window size";
         dragfloat_windowsize->unit = "";
         
-        binAtCursor(Point<double>(0,0));
+        initBinAtCursor();
 
         if (!nimg.isValid())
             initSpectrogramTexture();
@@ -313,7 +325,7 @@ protected:
     int requested_window_size = -1;
     void onNanoDisplay() override
     {
-        const float lineHeight = 20 * 1;
+        const float lineHeight = 1.5;
         float y;
 
         fontSize(15.0f * 1);
@@ -356,7 +368,19 @@ protected:
         strokeColor(Color(255,255,255,64));
         stroke();
 
-        text(128 + texture_w + 10, 16 + lineHeight, cursor_text, nullptr);
+        if (cursor2.getY() > 1 || cursor2.getY() < texture_h)
+        {
+            beginPath();
+            moveTo(128, 16 + cursor2.getY());
+            lineTo(128 + texture_w, 16 + cursor2.getY());
+            strokeColor(Color(255,255,255,255));
+            stroke();
+        }
+
+        text(122 + texture_w + 10, 16 + 10, topbin_text, nullptr);
+        text(122 + texture_w + 10, 16 + texture_h, botbin_text, nullptr);
+
+        textBox(122 + texture_w + 10, 16 + (texture_h/8), 150, cursor_text, nullptr);
 
         if (frozen) {
             text(128 + (texture_w/2), 500, frozen_text, nullptr);
@@ -364,6 +388,8 @@ protected:
     }
 
     const char* frozen_text = "frozen";
+    char topbin_text[32];
+    char botbin_text[32];
 
     void processRingBuffer()
     {
@@ -376,10 +402,10 @@ protected:
                 auto l_data = columns_l.columns.data();
                 auto r_data = columns_r.columns.data();
                 if (n > 0) {
-                    shiftRasteredColumns((texture_w / column_w), column_w, n);
+                    shiftRasteredColumns((n_columns), column_w, n);
                     for (int i = 0; i < n; i++) {
-                        rasterColumn<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], (((texture_w / column_w) - n + i) * column_w), column_w, texture_l, color_l);
-                        rasterColumn<texture_w, texture_h>(r_data[columns_r.columns.size() - n + i], (((texture_w / column_w) - n + i) * column_w), column_w, texture_r, color_r);
+                        rasterColumn<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_l, color_l);
+                        rasterColumn<texture_w, texture_h>(r_data[columns_r.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_r, color_r);
                     }
                     updateSpectrogramTexture();
                     repaint();
@@ -389,23 +415,80 @@ protected:
         
     }
 
-    int cursor_x = 0;
-    int cursor_y = 0;
-    char cursor_text[54];
-    void binAtCursor(Point<double> pos)
+    Point<float> cursor1;
+    Point<float> cursor2;
+    char cursor_text[256];
+    char cursor2_text[128];
+    Columns::Column colAtCursor(Point<float> cursor, bool leftOrRight)
     {
-        cursor_x = pos.getX() - texture_rect.getX();
-        cursor_y = pos.getY() - texture_rect.getY();
-        std::snprintf(cursor_text, 53, "cursor x: %d y: %d", cursor_x, cursor_y);
-        cursor_text[53] = '\0';
+        auto columns_size = columns_l.columns.size();
+
+        int cur_col = cursor.getX()/(column_w);
+
+        int at = -1;
+        char d = 'A';
+        if (columns_size < n_columns)
+        {
+            if (cur_col < (n_columns - columns_size)) {
+                at = 0;
+                d = 'B';
+            } else {
+                at = cur_col - (n_columns - columns_size);
+                d = 'C';
+            }
+        } else {
+            d = 'D';
+            at = columns_size - n_columns + cur_col;
+        }
+        at = std::min(static_cast<int>(columns_size - 1), at);
+
+        return !leftOrRight ? columns_l.columns.at(at) : columns_r.columns.at(at);
+    }
+
+    void initBinAtCursor()
+    {
+        std::snprintf(cursor_text, 256,
+                 "Cursor:\n---------\n\nMouse\ncol: %d bin: %d\nFrequency:\n%3.3fHz\n\nLEFT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f\n\nRIGHT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f",
+                 0, 0,
+                 0.0,
+                 0, 0, 0,
+                 0, 0, 0
+        );
+    }
+
+    void updateBinAtCursor()
+    {
+        auto c_l = colAtCursor(cursor1, 0);
+        auto c_r = colAtCursor(cursor1, 1);
+        
+        int cur_col = cursor1.getX()/(column_w);
+        int cur_bin = botbin + static_cast<int>(std::floor((texture_h - cursor1.getY()) / (texture_h / static_cast<float>(topbin - botbin))));
+
+        if (cursor2.getY() > 1 || cursor2.getY() < texture_h) {
+            std::snprintf(cursor_text, 256,
+                    "Cursor:\n%3.3fHz\n\nMouse\ncol: %d bin: %d\nFrequency:\n%3.3fHz\n\nLEFT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f\n\nRIGHT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f",
+                    freqAtBin(cursor2_bin), cur_col, cur_bin,
+                    freqAtBin(cur_bin),
+                    c_l.peakFrequency, c_l.bins[cur_bin], c_l.bins_phase[cur_bin],
+                    c_r.peakFrequency, c_r.bins[cur_bin], c_r.bins_phase[cur_bin]
+            );
+        } else {
+            std::snprintf(cursor_text, 256,
+                    "Cursor:\n---------\n\nMouse\ncol: %d bin: %d\nFrequency:\n%3.3fHz\n\nLEFT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f\n\nRIGHT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f",
+                    cur_col, cur_bin,
+                    freqAtBin(cur_bin),
+                    c_l.peakFrequency, c_l.bins[cur_bin], c_l.bins_phase[cur_bin],
+                    c_r.peakFrequency, c_r.bins[cur_bin], c_r.bins_phase[cur_bin]
+            );
+        }
     }
     
     void rasterAllColumns()
     {
         auto l_data = columns_l.columns;
         auto r_data = columns_r.columns;
-        unsigned int n = std::min(columns_l.columns.size(), static_cast<size_t>(texture_w / column_w));
-        unsigned int start = static_cast<size_t>(texture_w / column_w) - n;
+        unsigned int n = std::min(columns_l.columns.size(), static_cast<size_t>(n_columns));
+        unsigned int start = static_cast<size_t>(n_columns) - n;
         for (int i = start; i < n; i++) {
             rasterColumn<texture_w, texture_h>(l_data.at(columns_l.columns.size() - n + i), (i * column_w), column_w, texture_l, color_l);
             rasterColumn<texture_w, texture_h>(r_data.at(columns_r.columns.size() - n + i), (i * column_w), column_w, texture_r, color_r);
@@ -423,6 +506,7 @@ protected:
     DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, texture_w, texture_h);
     bool frozen = false;
 
+    int cursor2_bin;
    /**
       Mouse events.
     */
@@ -430,11 +514,25 @@ protected:
     {
         if (texture_rect.contains(ev.pos))
         {
-            binAtCursor(ev.pos);
+
+            if ((ev.pos.getX() - texture_rect.getX()) < 0 || columns_l.columns.size() < 1) {
+                initBinAtCursor();
+            } else {
+                cursor1.setX(ev.pos.getX() - texture_rect.getX());
+                cursor1.setY(ev.pos.getY() - texture_rect.getY());
+                updateBinAtCursor();
+            }
+            if (cursor2_moving) {
+                cursor2.setY(ev.pos.getY() - texture_rect.getY());
+                cursor2_bin = botbin + static_cast<int>(std::floor((texture_h - cursor2.getY()) / (texture_h / static_cast<float>(topbin - botbin))));
+                updateBinAtCursor();
+            }
+            repaint();
         }
         return UI::onMotion(ev);
     }
 
+    bool cursor2_moving = false;
     bool onMouse(const MouseEvent& ev) override
     {
         
@@ -444,6 +542,15 @@ protected:
             if (!frozen) repaint();
             return true;
         }
+        if (texture_rect.contains(ev.pos) && ev.button == 2 && ev.press == true)
+        {
+            cursor2_moving = true;
+            cursor2.setY(ev.pos.getY() - texture_rect.getY());
+            cursor2_bin = botbin + static_cast<int>(std::floor((texture_h - cursor2.getY()) / (texture_h / static_cast<float>(topbin - botbin))));
+            updateBinAtCursor();
+            repaint();
+        }
+        if (ev.button == 2 && ev.press == false) cursor2_moving = false;
 
         return UI::onMouse(ev);
     }
@@ -471,6 +578,11 @@ protected:
         // editParameter(widget->getId(), false);
     }
 
+    float freqAtBin(int bin)
+    {
+        return bin * (getSampleRate() / (window_size / 2 + 1) / 2 );
+    }
+
     void knobValueChanged(SubWidget* const widget, float value) override
     {
         auto w = static_cast<DragFloat*>(widget);
@@ -481,12 +593,14 @@ protected:
         if (w == dragfloat_topbin) {
             topbin = std::min(float(window_size / 2 + 1), value);
             topbin = std::max(botbin, topbin);
+            std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin));
             w->setValue(topbin);
             request_raster_all = true;
         }
         if (w == dragfloat_botbin) {
             botbin = std::min(float(window_size / 2 + 1), value);
             botbin = std::min(botbin, topbin);
+            std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin));
             w->setValue(botbin);
             request_raster_all = true;
         }
@@ -519,7 +633,8 @@ private:
 
     static constexpr int texture_w = 1000;
     static constexpr int texture_h = 460;
-    static constexpr int column_w = 5;
+    static constexpr int column_w = 2;
+    static constexpr int n_columns = (texture_w / column_w);
 
     Button fButton1;
 
@@ -612,7 +727,7 @@ private:
     float lerp(float a, float b, float t) { return a + t * (b - a); }
     float inverseLerp(float a, float b, float value) { return (value - a) / (b - a); }
     float remap(float value, float fromA, float fromB, float toA, float toB) { return lerp(toA, toB, inverseLerp(fromA, fromB, value)); }
-    float interpolate(float x, float* bins, size_t size) const {
+    float interpolate(float x, std::vector<float> bins, size_t size) const {
         int lowerIndex = static_cast<int>(x);
         int upperIndex = lowerIndex + 1;
         float weight = x - lowerIndex;

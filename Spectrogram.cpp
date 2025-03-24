@@ -137,7 +137,7 @@ void Spectrogram::setState(const char* key, const char* value)
 
 void Spectrogram::bufferSizeChanged (uint32_t newBufferSize)
 {
-    d_stdout("buffser changed %d", newBufferSize);
+    d_stdout("buffersize changed %d", newBufferSize);
 }
 
 void Spectrogram::sampleRateChanged (double	newSampleRate)
@@ -152,7 +152,7 @@ void Spectrogram::deactivate()
 
 void Spectrogram::activate()
 {
-    d_stdout("%f %d ", getSampleRate(), getBufferSize());
+    d_stdout("activated :) samplerate: %f buffersize: %d ", getSampleRate(), getBufferSize());
 }
 
 void Spectrogram::run(const float** inputs, float** outputs, uint32_t frames)
