@@ -15,6 +15,7 @@
  */
 
 #include "DistrhoUI.hpp"
+#include "Application.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -540,6 +541,56 @@ protected:
         return UI::onMotion(ev);
     }
 
+    void dumpToCSV()
+    {
+        std::string filename = "dump_at_" + std::to_string(getApp().getTime()) + ".csv";
+        FILE *datFile = fopen(filename.c_str(), "w");
+
+        if (!datFile)
+        {
+            std::cout << "Datfile not open at '" << filename << "'" << std::endl;
+        }
+        else
+        {
+            auto l_data = columns_l.columns;
+            auto r_data = columns_r.columns;
+            auto columns_size = columns_l.columns.size();
+            int start_col = 0;
+            int end_col = n_columns;
+            if (columns_size < n_columns)
+            {
+                start_col = n_columns - columns_size;
+                end_col = columns_size;
+            }
+            for (int i = 0; i < end_col; i++) {
+                auto col_x = (columns_size < n_columns) ? i : (columns_size - n_columns + i);
+                Columns::Column col_l = l_data.at(col_x);
+                Columns::Column col_r = r_data.at(col_x);
+                fprintf(datFile, "%04d_left_mag,", i);
+                for (int j = 0; j < col_l.size; j++) {
+                    fprintf(datFile, "%f,", col_l.bins[j]);
+                }
+                fprintf(datFile, "\n");
+                fprintf(datFile, "%04d_left_phase,", i);
+                for (int j = 0; j < col_l.size; j++) {
+                    fprintf(datFile, "%f,", col_l.bins_phase[j]);
+                }
+                fprintf(datFile, "\n");
+                fprintf(datFile, "%04d_right_mag,", i);
+                for (int j = 0; j < col_l.size; j++) {
+                    fprintf(datFile, "%f,", col_r.bins[j]);
+                }
+                fprintf(datFile, "\n");
+                fprintf(datFile, "%04d_right_phase,", i);
+                for (int j = 0; j < col_l.size; j++) {
+                    fprintf(datFile, "%f,", col_r.bins_phase[j]);
+                }
+                fprintf(datFile, "\n");
+            }
+            fclose(datFile);
+        }
+    }
+
     bool cursor2_moving = false;
     bool onMouse(const MouseEvent& ev) override
     {
@@ -548,6 +599,7 @@ protected:
         {
             frozen = !frozen;
             if (!frozen) repaint();
+            else dumpToCSV();
             return true;
         }
         if (texture_rect.contains(ev.pos) && ev.button == 2 && ev.press == true)
