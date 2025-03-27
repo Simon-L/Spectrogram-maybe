@@ -20,3 +20,6 @@ dpf_add_plugin(Spectrogram
 
 target_include_directories(
   Spectrogram PUBLIC ".")
+
+add_executable(test_fft tests/test_fft.cpp)
+target_include_directories(test_fft PUBLIC ".")
