@@ -1,3 +1,5 @@
 build
 *.wav
 build.*
+*.csv
+.vscode
