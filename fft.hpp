@@ -57,7 +57,7 @@ struct Columns {
     };
     std::vector<Column> columns;
 
-    float fct = 1.0f;
+    float fct = 2.0f;
 
     void init(std::vector<float> *_window, int _window_size)
     {

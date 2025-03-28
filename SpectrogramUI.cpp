@@ -32,6 +32,7 @@
 #include "Widgets.hpp"
 
 #include "fft.hpp"
+#include "colormaps.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -69,7 +70,7 @@ public:
         }
     protected:
         virtual void getCustomText(char dest[24]) {
-            std::snprintf(dest, sizeof(dest)-1, "%d", to_window_size_po2(getValue()));
+            std::snprintf(dest, 23, "%d", to_window_size_po2(getValue()));
         }
         
     };
@@ -85,7 +86,7 @@ public:
         #endif
 
         botbin = 0;
-        
+
         window_size = 1024;
         topbin = window_size / 2 + 1;
         window.resize(window_size);
@@ -129,7 +130,7 @@ public:
         dragfloat_gain = new DragFloat(this, this);
         dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
         dragfloat_gain->setRange(0, 15.0);
-        dragfloat_gain->setDefault(columns_l.fct);
+        dragfloat_gain->setDefault(1.0);
         dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
         // dragfloat_gain->setUsingLogScale(true);
         dragfloat_gain->label = "Gain";
@@ -518,8 +519,7 @@ protected:
     {
         auto w = static_cast<DragFloat*>(widget);
         if (w == dragfloat_gain) {
-            columns_l.fct = value;
-            columns_r.fct = value;
+            gain = value;
         }
         if (w == dragfloat_topbin) {
             topbin = std::min(float(window_size / 2 + 1), value);
@@ -561,6 +561,8 @@ private:
 
     int botbin;
     int topbin;
+
+    float gain = 1.0;
 
     static constexpr int texture_w = 1000;
     static constexpr int texture_h = 460;
@@ -631,11 +633,12 @@ private:
             unsigned char* px = data;
             for (int data_y = 0; data_y < texture_h; data_y++) {
                 for (int data_x = 0; data_x < texture_w; data_x++) {
-                    Pixel p = Pixel::alpha_compose(texture_l[data_x][data_y], texture_r[data_x][data_y]);
-                    px[0] = p.r;
-                    px[1] = p.g;
-                    px[2] = p.b;
-                    px[3] = p.a;
+                    Pixel pl = texture_l[data_x][data_y];
+                    Pixel pr = texture_r[data_x][data_y];
+                    px[0] = pl.r + pr.r;
+                    px[1] = pl.g + pr.g;
+                    px[2] = pl.b + pr.b;
+                    px[3] = pl.a + pr.r;
                     px += 4;
                 }
             }
@@ -684,10 +687,13 @@ private:
         for (int y = 0; y < texture_h; y++)
         {
             float v = interpolate(at, col.bins, col.size);
+            v *= gain;
+            if (v > 1.0) v = 1.0;
+            int idx = static_cast<int>(v * 255);
             for (int x = at_x; x < at_x + w; x++) {
-                tex[x][(texture_h - 1) - y].r = (v * color.red) * 255;
-                tex[x][(texture_h - 1) - y].g = (v * color.green) * 255;
-                tex[x][(texture_h - 1) - y].b = (v * color.blue) * 255;
+                tex[x][(texture_h - 1) - y].r = (cmaps["magma"][idx][0]) * 255;
+                tex[x][(texture_h - 1) - y].g = (cmaps["magma"][idx][1]) * 255;
+                tex[x][(texture_h - 1) - y].b = (cmaps["magma"][idx][2]) * 255;
                 tex[x][(texture_h - 1) - y].a = 255; // * color.alpha;
             }
             at += step;
