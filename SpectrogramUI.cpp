@@ -34,6 +34,7 @@
 
 #include "fft.hpp"
 #include "colormaps.hpp"
+#include "SimdUtils.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -85,7 +86,12 @@ public:
         }
     protected:
         virtual void getCustomText(char dest[24]) {
-            std::snprintf(dest, 23, "%c +%d", getValue() < 4096 ? 'L' : 'R', std::abs(static_cast<int>(getValue() - 4096)));
+            if (getValue() == 4096)
+            {
+                std::snprintf(dest, 23, "---");
+            } else {
+                std::snprintf(dest, 23, "%c +%d", getValue() < 4096 ? 'L' : 'R', std::abs(static_cast<int>(getValue() - 4096)));
+            }
         }
         
     };
@@ -94,7 +100,7 @@ public:
         : UI(1280, 512),
           colorsButton(this, this)
     {
-#ifdef DGL_NO_SHARED_RESOURCES
+        #ifdef DGL_NO_SHARED_RESOURCES
         createFontFromFile("sans", "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf");
         #else
         loadSharedResources();
@@ -119,40 +125,16 @@ public:
         columns_l.sampleRate = getSampleRate();
         columns_r.sampleRate = getSampleRate();
 
-        dragfloat_topbin = new DragFloat(this, this);
-        dragfloat_topbin->setAbsolutePos(15,15);
-        dragfloat_topbin->setRange(2, topbin);
-        dragfloat_topbin->setDefault(topbin);
-        dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
-        dragfloat_topbin->setStep(1);
-        // dragfloat_topbin->setUsingLogScale(true);
-        dragfloat_topbin->label = "Top bin";
-        dragfloat_topbin->unit = "";
-        dragfloat_topbin->toFront();
-        
-        dragfloat_botbin = new DragFloat(this, this);
-        dragfloat_botbin->setAbsolutePos(15, 15 + (45*1));
-        
-        dragfloat_botbin->setRange(0, topbin);
-        dragfloat_botbin->setDefault(botbin);
-        dragfloat_botbin->setValue(dragfloat_botbin->getDefault(), false);
-        dragfloat_botbin->setStep(1);
-        // dragfloat_botbin->setUsingLogScale(true);
-        dragfloat_botbin->label = "Bottom bin";
-        dragfloat_botbin->unit = "";
-        dragfloat_botbin->toFront();
-        
-        dragfloat_gain = new DragFloat(this, this);
-        dragfloat_gain->setAbsolutePos(15, 15 + (45*2));
-        dragfloat_gain->setRange(0, 15.0);
-        dragfloat_gain->setDefault(1.0);
-        dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
-        // dragfloat_gain->setUsingLogScale(true);
-        dragfloat_gain->label = "Gain";
-        dragfloat_gain->unit = "";
-        
+        dragfloat_pregain = new DragFloat(this, this);
+        dragfloat_pregain->setAbsolutePos(15,15);
+        dragfloat_pregain->setRange(-90, 30);
+        dragfloat_pregain->setDefault(0);
+        dragfloat_pregain->setValue(dragfloat_pregain->getDefault(), false);
+        dragfloat_pregain->label = "Pre-gain";
+        dragfloat_pregain->unit = "dB";
+
         dragfloat_windowsize = new DragFloatWindowsize(this, this);
-        dragfloat_windowsize->setAbsolutePos(15, 15 + (45*3));
+        dragfloat_windowsize->setAbsolutePos(15, 15 + (45*1));
         dragfloat_windowsize->setRange(0, 7);
         dragfloat_windowsize->setDefault(from_window_size_po2(window_size));
         dragfloat_windowsize->setStep(1);
@@ -161,12 +143,8 @@ public:
         dragfloat_windowsize->label = "Window size";
         dragfloat_windowsize->unit = "";
         
-        colorsButton.setAbsolutePos(15, 15 + (45*4));
-        colorsButton.setLabel("Cycle colors");
-        colorsButton.setSize(100, 30);
-        
         dragfloat_delay = new DragFloatDelay(this, this);
-        dragfloat_delay->setAbsolutePos(15, 18 + (45*5));
+        dragfloat_delay->setAbsolutePos(15, 15 + (45*2));
         dragfloat_delay->setRange(0, 8192);
         dragfloat_delay->setDefault(4096);
         dragfloat_delay->setStep(256);
@@ -174,6 +152,38 @@ public:
         dragfloat_delay->setValue(dragfloat_delay->getDefault(), false);
         dragfloat_delay->label = "Delay";
         dragfloat_delay->unit = "";
+
+        dragfloat_topbin = new DragFloat(this, this);
+        dragfloat_topbin->setAbsolutePos(15,15 + (45*3));
+        dragfloat_topbin->setRange(2, topbin);
+        dragfloat_topbin->setDefault(topbin);
+        dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
+        dragfloat_topbin->setStep(1);
+        dragfloat_topbin->label = "Top bin";
+        dragfloat_topbin->unit = "";
+        
+        dragfloat_botbin = new DragFloat(this, this);
+        dragfloat_botbin->setAbsolutePos(15, 15 + (45*4));
+        dragfloat_botbin->setRange(0, topbin);
+        dragfloat_botbin->setDefault(botbin);
+        dragfloat_botbin->setValue(dragfloat_botbin->getDefault(), false);
+        dragfloat_botbin->setStep(1);
+        dragfloat_botbin->label = "Bottom bin";
+        dragfloat_botbin->unit = "";
+        dragfloat_botbin->toFront();
+        
+        colorsButton.setAbsolutePos(15, 15 + (45*5));
+        colorsButton.setLabel("Cycle colors");
+        colorsButton.setSize(100, 30);
+        
+        dragfloat_gain = new DragFloat(this, this);
+        dragfloat_gain->setAbsolutePos(15, 18 + (45*6));
+        dragfloat_gain->setRange(0, 15.0);
+        dragfloat_gain->setDefault(1.0);
+        dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
+        dragfloat_gain->label = "Gain";
+        dragfloat_gain->unit = "";
+        
 
         initBinAtCursor();
 
@@ -185,6 +195,7 @@ public:
 
     NanoImage knob_img;
     NanoImage scale_img;
+    DragFloat* dragfloat_pregain;
     DragFloat* dragfloat_topbin;
     DragFloat* dragfloat_botbin;
     DragFloat* dragfloat_gain;
@@ -266,7 +277,7 @@ protected:
 
         drawSpectrogramTexture(128, 16);
 
-        text(40,15+(45*4)+42, colors[colorsId], nullptr);
+        text(40,15+(45*5)+42, colors[colorsId], nullptr);
 
         beginPath();
         roundedRect(128, 16, texture_w, texture_h, 4);
@@ -330,6 +341,10 @@ protected:
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->ring_buffer.readCustomType<RbMsg>(rbmsg)) {
                 if (frozen) continue;
+                if (dragfloat_pregain->getValue() != 0.0f) {
+                    simd_buffer_dbgain(rbmsg.buffer_l, rbmsg.length, dragfloat_pregain->getValue());
+                    simd_buffer_dbgain(rbmsg.buffer_r, rbmsg.length, dragfloat_pregain->getValue());
+                }
                 buffer_r.process(rbmsg.buffer_r, rbmsg.length);
                 buffer_l.process(rbmsg.buffer_l, rbmsg.length);
                 auto n = columns_l.feed(buffer_l.buffer.data(), rbmsg.length);
