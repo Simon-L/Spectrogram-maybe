@@ -25,6 +25,7 @@
 #include <vector>
 #include <iostream>
 
+#include "DistrhoUtils.hpp"
 #include "Spectrogram.hpp"
 
 
@@ -74,6 +75,20 @@ public:
         }
         
     };
+    
+    class DragFloatDelay : public DragFloat
+    {
+    public:
+        DragFloatDelay(NanoTopLevelWidget* const p, KnobEventHandler::Callback* const cb)
+        : DragFloat(p, cb)
+        {
+        }
+    protected:
+        virtual void getCustomText(char dest[24]) {
+            std::snprintf(dest, 23, "%c +%d", getValue() < 4096 ? 'L' : 'R', std::abs(static_cast<int>(getValue() - 4096)));
+        }
+        
+    };
 
     SpectrogramUI()
         : UI(1280, 512),
@@ -103,9 +118,9 @@ public:
         plugin_ptr = reinterpret_cast<Spectrogram*>(getPluginInstancePointer());
         columns_l.sampleRate = getSampleRate();
         columns_r.sampleRate = getSampleRate();
+
         dragfloat_topbin = new DragFloat(this, this);
         dragfloat_topbin->setAbsolutePos(15,15);
-        
         dragfloat_topbin->setRange(2, topbin);
         dragfloat_topbin->setDefault(topbin);
         dragfloat_topbin->setValue(dragfloat_topbin->getDefault(), false);
@@ -149,6 +164,16 @@ public:
         colorsButton.setAbsolutePos(15, 15 + (45*4));
         colorsButton.setLabel("Cycle colors");
         colorsButton.setSize(100, 30);
+        
+        dragfloat_delay = new DragFloatDelay(this, this);
+        dragfloat_delay->setAbsolutePos(15, 18 + (45*5));
+        dragfloat_delay->setRange(0, 8192);
+        dragfloat_delay->setDefault(4096);
+        dragfloat_delay->setStep(256);
+        dragfloat_delay->setUsingCustomText(true);
+        dragfloat_delay->setValue(dragfloat_delay->getDefault(), false);
+        dragfloat_delay->label = "Delay";
+        dragfloat_delay->unit = "";
 
         initBinAtCursor();
 
@@ -164,6 +189,7 @@ public:
     DragFloat* dragfloat_botbin;
     DragFloat* dragfloat_gain;
     DragFloatWindowsize* dragfloat_windowsize;
+    DragFloatDelay* dragfloat_delay;
 
     std::vector<float> window;
     int window_size;
@@ -240,7 +266,7 @@ protected:
 
         drawSpectrogramTexture(128, 16);
 
-        text(40,15+(45*4)+45, colors[colorsId], nullptr);
+        text(40,15+(45*4)+42, colors[colorsId], nullptr);
 
         beginPath();
         roundedRect(128, 16, texture_w, texture_h, 4);
@@ -270,21 +296,54 @@ protected:
     char topbin_text[32];
     char botbin_text[32];
 
+    struct BufferOffset
+    {
+        std::vector<float> buffer;
+        size_t sampleOffset; // offset in sample
+
+        BufferOffset()
+            :sampleOffset(0)
+        {
+            buffer.reserve(48000 * 2);
+        }
+
+        void process(float* in, size_t n)
+        {
+            buffer.erase(buffer.begin(), buffer.end() - std::min(buffer.size(), sampleOffset));
+            buffer.insert(buffer.end(), in, &in[n]);
+        }
+
+        void dump()
+        {
+            for (auto& s: buffer) {
+                d_stdout("%f", s);
+            }
+        }
+    };
+    
+    BufferOffset buffer_r;
+    BufferOffset buffer_l;
+
     void processRingBuffer()
     {
         while (plugin_ptr->ring_buffer.getReadableDataSize() >= sizeof(RbMsg)) {
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->ring_buffer.readCustomType<RbMsg>(rbmsg)) {
                 if (frozen) continue;
-                auto n = columns_l.feed(rbmsg.buffer_l, rbmsg.length);
-                n = columns_r.feed(rbmsg.buffer_r, rbmsg.length);
+                buffer_r.process(rbmsg.buffer_r, rbmsg.length);
+                buffer_l.process(rbmsg.buffer_l, rbmsg.length);
+                auto n = columns_l.feed(buffer_l.buffer.data(), rbmsg.length);
+                n = columns_r.feed(buffer_r.buffer.data(), rbmsg.length);
                 auto l_data = columns_l.columns.data();
                 auto r_data = columns_r.columns.data();
                 if (n > 0) {
                     shiftRasteredColumns((n_columns), column_w, n);
                     for (int i = 0; i < n; i++) {
-                        rasterColumn<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_l, false);
-                        rasterColumn<texture_w, texture_h>(r_data[columns_r.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_r, true);
+                        if (colorsId < 6) {
+                            rasterColumnMaxLR<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], r_data[columns_l.columns.size() - n + i],  (((n_columns) - n + i) * column_w), column_w, texture_l, texture_r, false);
+                        } else {
+                            rasterColumnAddLR<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], r_data[columns_l.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_l, texture_r, false);
+                        }
                     }
                     updateSpectrogramTexture();
                     repaint();
@@ -376,8 +435,11 @@ protected:
         }
         for (int i = 0; i < end_col; i++) {
             auto col_x = (columns_size < n_columns) ? i : (columns_size - n_columns + i);
-            rasterColumn<texture_w, texture_h>(l_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, false);
-            rasterColumn<texture_w, texture_h>(r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_r, true);
+            if (colorsId < 6) {
+                rasterColumnMaxLR<texture_w, texture_h>(l_data.at(col_x), r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, texture_r, false);
+            } else {
+                rasterColumnAddLR<texture_w, texture_h>(l_data.at(col_x), r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, texture_r, false);
+            }
         }
 
         updateSpectrogramTexture();
@@ -414,8 +476,8 @@ protected:
                 cursor2_bin = botbin + static_cast<int>(std::floor((texture_h - cursor2.getY()) / (texture_h / static_cast<float>(topbin - botbin))));
                 updateBinAtCursor();
             }
-            repaint();
         }
+        repaint();
         return UI::onMotion(ev);
     }
 
@@ -499,16 +561,14 @@ protected:
         UI::onResize(ev);
     }
 
-    const char* colors[9] = {
+    const char* colors[7] = {
     "magma",
     "plasma",
     "inferno",
     "viridis",
     "cividis",
     "turbo",
-    "berlin",
-    "managua",
-    "vanimo"};
+    "green-pink"};
     int colorsId = 0;
 
     void buttonClicked(SubWidget* const widget, int) override
@@ -516,7 +576,7 @@ protected:
         if (widget == &colorsButton)
         {
             colorsId += 1;
-            if (colorsId > 8) colorsId = 0;
+            if (colorsId > 6) colorsId = 0;
             request_raster_all = true;
         }
         repaint();
@@ -561,6 +621,16 @@ protected:
         }
         if (w == dragfloat_windowsize) {
             requested_window_size = to_window_size_po2(value);
+        }
+        if (w == dragfloat_delay) {
+            auto v = static_cast<int>(value);
+            if (v < 4096) {
+                buffer_r.sampleOffset = 0;
+                buffer_l.sampleOffset = std::abs(v - 4096);
+            } else {
+                buffer_l.sampleOffset = 0;
+                buffer_r.sampleOffset = v - 4096;
+            }
         }
         repaint();
     }
@@ -657,15 +727,11 @@ private:
             unsigned char* px = data;
             for (int data_y = 0; data_y < texture_h; data_y++) {
                 for (int data_x = 0; data_x < texture_w; data_x++) {
-                    Pixel pl = texture_l[data_x][data_y];
-                    Pixel pr = texture_r[data_x][data_y];
-                    px[0] = std::round((1.0f - (1.0f - pl.r / 255.0) * (1.0f - pr.r / 255.0)) * 255.0);
-                    px[1] = std::round((1.0f - (1.0f - pl.g / 255.0) * (1.0f - pr.g / 255.0)) * 255.0);
-                    px[2] = std::round((1.0f - (1.0f - pl.b / 255.0) * (1.0f - pr.b / 255.0)) * 255.0);
-                    // px[0] = pl.r;
-                    // px[1] = pl.g;
-                    // px[2] = pl.b;
-                    px[3] = 255;
+                    Pixel p = texture_l[data_x][data_y];
+                    px[0] = p.r;
+                    px[1] = p.g;
+                    px[2] = p.b;
+                    px[3] = p.a;
                     px += 4;
                 }
             }
@@ -707,45 +773,100 @@ private:
     }
 
     template <size_t size_x, size_t size_y>
-    void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], bool leftOrRight)
+    void rasterColumnMaxLR(Columns::Column col_l, Columns::Column col_r, int at_x, int w, Pixel tex_l[size_x][size_y], Pixel tex_r[size_x][size_y], bool leftOrRight)
     {
-        if (col.peakMagnitude < 1e-6) {
-            for (int y = 0; y < texture_h; y++)
-            {
-                for (int x = at_x; x < at_x + w; x++) {
-                    tex[x][(texture_h - 1) - y].r = 0.0f;
-                    tex[x][(texture_h - 1) - y].g = 0.0f;
-                    tex[x][(texture_h - 1) - y].b = 0.0f;
-                    tex[x][(texture_h - 1) - y].a = 0.0f;
-                }
-            }
-            return;
-        }
         float at = botbin;
         float step = (topbin - at) / texture_h;
         for (int y = 0; y < texture_h; y++)
         {
-            float v = interpolate(at, col.bins, col.size);
+            auto at_nearest = static_cast<int>(at);
+            float v;
+
+            if (col_l.bins[at_nearest] > col_r.bins[at_nearest]) {
+                v = interpolate(at, col_l.bins, col_l.size);
+            } else {
+                v = interpolate(at, col_r.bins, col_r.size);
+            }
+
             v *= gain;
             if (v > 1.0) v = 1.0;
-            // if (colorsId >= 6 && colorsId <=8) {
-            //     if (leftOrRight) {
-            //         v = 0.5 + (v/2);
-            //     } else {
-            //         v = 0.5 - (v/2);
-            //     }
-            // }
-            // v = 0.5 + (v * 0.5);
             int idx = static_cast<int>(v * 255);
             for (int x = at_x; x < at_x + w; x++) {
-                tex[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
-                tex[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
-                tex[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
-                tex[x][(texture_h - 1) - y].a = 255;
+                tex_l[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
+                tex_l[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
+                tex_l[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
+                tex_l[x][(texture_h - 1) - y].a = 255;
+            }
+            at += step;
+        }
+
+    }
+
+    template <size_t size_x, size_t size_y>
+    void rasterColumnAddLR(Columns::Column col_l, Columns::Column col_r, int at_x, int w, Pixel tex_l[size_x][size_y], Pixel tex_r[size_x][size_y], bool leftOrRight)
+    {
+        float at = botbin;
+        float step = (topbin - at) / texture_h;
+        for (int y = 0; y < texture_h; y++)
+        {
+            float v_l = interpolate(at, col_l.bins, col_l.size);
+            v_l *= gain;
+            if (v_l > 1.0) v_l = 1.0;
+
+            float v_r = interpolate(at, col_r.bins, col_r.size);
+            v_r *= gain;
+            if (v_r > 1.0) v_r = 1.0;
+            
+            for (int x = at_x; x < at_x + w; x++) {
+                tex_l[x][(texture_h - 1) - y].r = v_l * 255;
+                tex_l[x][(texture_h - 1) - y].g = ((v_l * 0.25) + (v_r * 0.75)) * 255;
+                tex_l[x][(texture_h - 1) - y].b = ((v_l * 0.5) + (v_r * 0.5)) * 255;
+                tex_l[x][(texture_h - 1) - y].a = 255;
             }
             at += step;
         }
     }
+
+    // template <size_t size_x, size_t size_y>
+    // void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], bool leftOrRight)
+    // {
+    //     if (col.peakMagnitude < 1e-6) {
+    //         for (int y = 0; y < texture_h; y++)
+    //         {
+    //             for (int x = at_x; x < at_x + w; x++) {
+    //                 tex[x][(texture_h - 1) - y].r = 0.0f;
+    //                 tex[x][(texture_h - 1) - y].g = 0.0f;
+    //                 tex[x][(texture_h - 1) - y].b = 0.0f;
+    //                 tex[x][(texture_h - 1) - y].a = 0.0f;
+    //             }
+    //         }
+    //         return;
+    //     }
+    //     float at = botbin;
+    //     float step = (topbin - at) / texture_h;
+    //     for (int y = 0; y < texture_h; y++)
+    //     {
+    //         float v = interpolate(at, col.bins, col.size);
+    //         v *= gain;
+    //         if (v > 1.0) v = 1.0;
+    //         // if (colorsId >= 6 && colorsId <=8) {
+    //         //     if (leftOrRight) {
+    //         //         v = 0.5 + (v/2);
+    //         //     } else {
+    //         //         v = 0.5 - (v/2);
+    //         //     }
+    //         // }
+    //         // v = 0.5 + (v * 0.5);
+    //         int idx = static_cast<int>(v * 255);
+    //         for (int x = at_x; x < at_x + w; x++) {
+    //             tex[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
+    //             tex[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
+    //             tex[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
+    //             tex[x][(texture_h - 1) - y].a = 255;
+    //         }
+    //         at += step;
+    //     }
+    // }
 
    /**
       Set our UI class as non-copyable and add a leak detector just in case.

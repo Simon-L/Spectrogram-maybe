@@ -12,7 +12,8 @@ project(${NAME})
 add_subdirectory(/path/to/DPF bin)
 
 dpf_add_plugin(Spectrogram
-  TARGETS jack vst2 # dssi lv2 vst2 vst3 clap
+  TARGETS jack vst2 lv2
+  MONOLITHIC
   FILES_DSP
       Spectrogram.cpp
   FILES_UI
