@@ -26,15 +26,16 @@
 #include <iostream>
 
 #include "DistrhoUtils.hpp"
+#include "NanoVG.hpp"
 #include "Spectrogram.hpp"
 
 
 #include "NanoButton.hpp"
 #include "Widgets.hpp"
 
+#include "SimdUtils.hpp"
 #include "fft.hpp"
 #include "colormaps.hpp"
-#include "SimdUtils.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -176,13 +177,22 @@ public:
         colorsButton.setLabel("Cycle colors");
         colorsButton.setSize(100, 30);
         
-        dragfloat_gain = new DragFloat(this, this);
-        dragfloat_gain->setAbsolutePos(15, 18 + (45*6));
-        dragfloat_gain->setRange(0, 15.0);
-        dragfloat_gain->setDefault(1.0);
-        dragfloat_gain->setValue(dragfloat_gain->getDefault(), false);
-        dragfloat_gain->label = "Gain";
-        dragfloat_gain->unit = "";
+        dragfloat_multiplier = new DragFloat(this, this);
+        dragfloat_multiplier->setAbsolutePos(15, 18 + (45*6));
+        dragfloat_multiplier->setRange(0, 15.0);
+        dragfloat_multiplier->setDefault(1.0);
+        dragfloat_multiplier->setValue(dragfloat_multiplier->getDefault(), false);
+        dragfloat_multiplier->label = "Multiplier";
+        dragfloat_multiplier->unit = "";
+        
+        dragfloat_threshold = new DragFloat(this, this);
+        dragfloat_threshold->setAbsolutePos(15, 18 + (45*7));
+        dragfloat_threshold->setRange(0, 1.0);
+        dragfloat_threshold->setDefault(0.0);
+        dragfloat_threshold->setStep(0.001);
+        dragfloat_threshold->setValue(dragfloat_threshold->getDefault(), false);
+        dragfloat_threshold->label = "Threshold";
+        dragfloat_threshold->unit = "";
         
 
         initBinAtCursor();
@@ -196,11 +206,12 @@ public:
     NanoImage knob_img;
     NanoImage scale_img;
     DragFloat* dragfloat_pregain;
-    DragFloat* dragfloat_topbin;
-    DragFloat* dragfloat_botbin;
-    DragFloat* dragfloat_gain;
     DragFloatWindowsize* dragfloat_windowsize;
     DragFloatDelay* dragfloat_delay;
+    DragFloat* dragfloat_topbin;
+    DragFloat* dragfloat_botbin;
+    DragFloat* dragfloat_multiplier;
+    DragFloat* dragfloat_threshold;
 
     std::vector<float> window;
     int window_size;
@@ -277,7 +288,10 @@ protected:
 
         drawSpectrogramTexture(128, 16);
 
-        text(40,15+(45*5)+42, colors[colorsId], nullptr);
+        fillColor(Color(1.f, 1.f, 1.f));
+        textAlign(ALIGN_CENTER);
+        text(colorsButton.getAbsoluteX() + colorsButton.getWidth()/2,15+(45*5)+42, colors[colorsId], nullptr);
+        textAlign(ALIGN_LEFT);
 
         beginPath();
         roundedRect(128, 16, texture_w, texture_h, 4);
@@ -617,8 +631,8 @@ protected:
     void knobValueChanged(SubWidget* const widget, float value) override
     {
         auto w = static_cast<DragFloat*>(widget);
-        if (w == dragfloat_gain) {
-            gain = value;
+        if (w == dragfloat_multiplier) {
+            multiplier = value;
         }
         if (w == dragfloat_topbin) {
             topbin = std::min(float(window_size / 2 + 1), value);
@@ -671,7 +685,7 @@ private:
     int botbin;
     int topbin;
 
-    float gain = 1.0;
+    float multiplier = 1.0;
 
     static constexpr int texture_w = 1000;
     static constexpr int texture_h = 460;
@@ -803,14 +817,24 @@ private:
                 v = interpolate(at, col_r.bins, col_r.size);
             }
 
-            v *= gain;
+            v *= multiplier;
             if (v > 1.0) v = 1.0;
-            int idx = static_cast<int>(v * 255);
-            for (int x = at_x; x < at_x + w; x++) {
-                tex_l[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
-                tex_l[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
-                tex_l[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
-                tex_l[x][(texture_h - 1) - y].a = 255;
+            if (v >= dragfloat_threshold->getValue())
+            {
+                int idx = static_cast<int>(v * 255);
+                for (int x = at_x; x < at_x + w; x++) {
+                    tex_l[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
+                    tex_l[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
+                    tex_l[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
+                    tex_l[x][(texture_h - 1) - y].a = 255;
+                }
+            } else {
+                for (int x = at_x; x < at_x + w; x++) {
+                    tex_l[x][(texture_h - 1) - y].r = 0;
+                    tex_l[x][(texture_h - 1) - y].g = 0;
+                    tex_l[x][(texture_h - 1) - y].b = 0;
+                    tex_l[x][(texture_h - 1) - y].a = 255;
+                }
             }
             at += step;
         }
@@ -825,11 +849,11 @@ private:
         for (int y = 0; y < texture_h; y++)
         {
             float v_l = interpolate(at, col_l.bins, col_l.size);
-            v_l *= gain;
+            v_l *= multiplier;
             if (v_l > 1.0) v_l = 1.0;
 
             float v_r = interpolate(at, col_r.bins, col_r.size);
-            v_r *= gain;
+            v_r *= multiplier;
             if (v_r > 1.0) v_r = 1.0;
             
             for (int x = at_x; x < at_x + w; x++) {

@@ -23,5 +23,10 @@ dpf_add_plugin(Spectrogram
 target_include_directories(
   Spectrogram PUBLIC ".")
 
+target_compile_options(
+  Spectrogram PUBLIC "-march=x86-64" "-mavx2")
+
 add_executable(test_fft tests/test_fft.cpp)
 target_include_directories(test_fft PUBLIC ".")
+target_compile_options(
+  test_fft PUBLIC "-march=x86-64" "-mavx2")

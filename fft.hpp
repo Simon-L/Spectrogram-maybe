@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "pocketfft.h"
+#include "simde/x86/avx2.h"
 
 // https://github.com/sidneycadot/WindowFunctions/blob/master/c99/window_functions.c
 void cosine_window(float * w, unsigned n, const float * coeff, unsigned ncoeff, bool sflag)
@@ -80,8 +81,18 @@ struct Columns {
                 idx += eat;
                 available -= eat;
                 if (buffer.size() == window_size) {
-                    for (int i = 0; i < window_size; i++) {
-                        buffer[i] = buffer[i] * window->data()[i];
+                    int i;
+                    for (i = 0; i < window_size - window_size % 8; i += 8)
+                    {
+                        simde__m256 buf = simde_mm256_loadu_ps(&buffer[i]);
+                        simde__m256 win = simde_mm256_loadu_ps(&window->data()[i]);
+                        buf = simde_mm256_mul_ps(buf, win);
+                        simde_mm256_storeu_ps(&buffer[i], buf);
+                    }
+                    // non-vectorisable remaining elements
+                    for (int k = i; k < window_size; k++)
+                    {
+                        buffer[k] *= window->data()[k];
                     }
                 
                     processFFT();
