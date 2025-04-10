@@ -158,10 +158,8 @@ void Spectrogram::activate()
 void Spectrogram::run(const float** inputs, float** outputs, uint32_t frames)
 {
     if (ring_buffer.getWritableDataSize() >= sizeof(RbMsg)) {
-        for (int i = 0; i < frames; i++) {
-            rbmsg.buffer_l[i] = inputs[0][i];
-            rbmsg.buffer_r[i] = inputs[1][i];
-        }
+        std::memcpy(rbmsg.buffer_l, inputs[0], sizeof(float) * frames);
+        std::memcpy(rbmsg.buffer_r, inputs[1], sizeof(float) * frames);
         rbmsg.length = frames;
         ring_buffer.writeCustomType<RbMsg>(rbmsg);
         ring_buffer.commitWrite();
