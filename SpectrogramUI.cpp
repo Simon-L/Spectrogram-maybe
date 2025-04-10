@@ -99,7 +99,8 @@ public:
 
     SpectrogramUI()
         : UI(1280, 512),
-          colorsButton(this, this)
+          colorsButton(this, this),
+          peakButton(this, this)
     {
         #ifdef DGL_NO_SHARED_RESOURCES
         createFontFromFile("sans", "/usr/share/fonts/truetype/ttf-dejavu/DejaVuSans.ttf");
@@ -194,6 +195,9 @@ public:
         dragfloat_threshold->label = "Threshold";
         dragfloat_threshold->unit = "";
         
+        peakButton.setAbsolutePos(15, 18 + (45*8));
+        peakButton.setLabel("Peak bins only");
+        peakButton.setSize(100, 30);
 
         initBinAtCursor();
 
@@ -349,8 +353,9 @@ protected:
     BufferOffset buffer_r;
     BufferOffset buffer_l;
 
-    void processRingBuffer()
+    int processRingBuffer()
     {
+        int n = 0;
         while (plugin_ptr->ring_buffer.getReadableDataSize() >= sizeof(RbMsg)) {
             RbMsg rbmsg = RbMsg();
             if (plugin_ptr->ring_buffer.readCustomType<RbMsg>(rbmsg)) {
@@ -361,7 +366,7 @@ protected:
                 }
                 buffer_r.process(rbmsg.buffer_r, rbmsg.length);
                 buffer_l.process(rbmsg.buffer_l, rbmsg.length);
-                auto n = columns_l.feed(buffer_l.buffer.data(), rbmsg.length);
+                n = columns_l.feed(buffer_l.buffer.data(), rbmsg.length);
                 n = columns_r.feed(buffer_r.buffer.data(), rbmsg.length);
                 auto l_data = columns_l.columns.data();
                 auto r_data = columns_r.columns.data();
@@ -369,7 +374,7 @@ protected:
                     shiftRasteredColumns((n_columns), column_w, n);
                     for (int i = 0; i < n; i++) {
                         if (colorsId < 6) {
-                            rasterColumnMaxLR<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], r_data[columns_l.columns.size() - n + i],  (((n_columns) - n + i) * column_w), column_w, texture_l, texture_r, false);
+                            rasterColumnMaxLR<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], r_data[columns_l.columns.size() - n + i],  (((n_columns) - n + i) * column_w), column_w, texture_l, texture_r);
                         } else {
                             rasterColumnAddLR<texture_w, texture_h>(l_data[columns_l.columns.size() - n + i], r_data[columns_l.columns.size() - n + i], (((n_columns) - n + i) * column_w), column_w, texture_l, texture_r, false);
                         }
@@ -379,7 +384,7 @@ protected:
                 }
             }
         }
-        
+        return n;
     }
 
     Point<float> cursor1;
@@ -465,7 +470,7 @@ protected:
         for (int i = 0; i < end_col; i++) {
             auto col_x = (columns_size < n_columns) ? i : (columns_size - n_columns + i);
             if (colorsId < 6) {
-                rasterColumnMaxLR<texture_w, texture_h>(l_data.at(col_x), r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, texture_r, false);
+                rasterColumnMaxLR<texture_w, texture_h>(l_data.at(col_x), r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, texture_r);
             } else {
                 rasterColumnAddLR<texture_w, texture_h>(l_data.at(col_x), r_data.at(col_x), ((i + start_col) * column_w), column_w, texture_l, texture_r, false);
             }
@@ -477,8 +482,11 @@ protected:
 
     void uiIdle() override
     {
-        processRingBuffer();
-        if (window_size >= 4096) repaint();
+        if (processRingBuffer())
+            repaint();
+        
+        if (window_size >= 4096)
+            repaint();
     }
 
     DGL::Rectangle<double> texture_rect = Rectangle<double>(128, 16, texture_w, texture_h);
@@ -608,6 +616,12 @@ protected:
             if (colorsId > 6) colorsId = 0;
             request_raster_all = true;
         }
+        if (widget == &peakButton)
+        {
+            peakBinsOnly = !peakBinsOnly;
+            peakButton.setBackgroundColor(peakBinsOnly ? Color(96, 96, 96) : Color(32, 32, 32));
+            request_raster_all = true;
+        }
         repaint();
     }
 
@@ -661,13 +675,23 @@ protected:
                 buffer_r.sampleOffset = v - 4096;
             }
         }
+        if (frozen && (w == dragfloat_multiplier || w == dragfloat_threshold))
+        {
+            d_stdout("Yes ?");
+            request_raster_all = true;
+        }
+        
         repaint();
     }
 
     void knobDoubleClicked(SubWidget* const widget) override
     {
         auto w = static_cast<DragFloat*>(widget);
-        w->setValue(w->getDefault(), true);
+        if (w)
+        {
+            knobValueChanged(w, w->getDefault());
+
+        }
     }
 
     static int to_window_size_po2(float value) { return static_cast<int>(std::pow(2, 7 + static_cast<int>(value))); }
@@ -693,6 +717,8 @@ private:
     static constexpr int n_columns = (texture_w / column_w);
 
     Button colorsButton;
+    Button peakButton;
+    bool peakBinsOnly = false;
 
     struct Pixel{
         uint8_t r;
@@ -802,25 +828,38 @@ private:
     }
 
     template <size_t size_x, size_t size_y>
-    void rasterColumnMaxLR(Columns::Column col_l, Columns::Column col_r, int at_x, int w, Pixel tex_l[size_x][size_y], Pixel tex_r[size_x][size_y], bool leftOrRight)
+    void rasterColumnMaxLR(Columns::Column col_l, Columns::Column col_r, int at_x, int w, Pixel tex_l[size_x][size_y], Pixel tex_r[size_x][size_y])
     {
         float at = botbin;
         float step = (topbin - at) / texture_h;
         for (int y = 0; y < texture_h; y++)
         {
             auto at_nearest = static_cast<int>(at);
-            float v;
+            float v = std::max(col_l.bins[at_nearest], col_r.bins[at_nearest]);
+            bool leftOrRight = v == col_l.bins[at_nearest] ? false : true;
 
-            if (col_l.bins[at_nearest] > col_r.bins[at_nearest]) {
-                v = interpolate(at, col_l.bins, col_l.size);
-            } else {
-                v = interpolate(at, col_r.bins, col_r.size);
-            }
-
-            v *= multiplier;
-            if (v > 1.0) v = 1.0;
-            if (v >= dragfloat_threshold->getValue())
+            if (v < dragfloat_threshold->getValue()
+                || (peakBinsOnly && (!col_l.bins_peak[at_nearest] && !col_r.bins_peak[at_nearest])))
             {
+                for (int x = at_x; x < at_x + w; x++) {
+                    tex_l[x][(texture_h - 1) - y].r = 0;
+                    tex_l[x][(texture_h - 1) - y].g = 0;
+                    tex_l[x][(texture_h - 1) - y].b = 0;
+                    tex_l[x][(texture_h - 1) - y].a = 255;
+                }
+            } else {
+                if (peakBinsOnly) {
+                    // max is right, peak on left, no peak on right -> use left
+                    if (leftOrRight && col_l.bins_peak[at_nearest] && !col_r.bins_peak[at_nearest])
+                        v = interpolate(at, col_l.bins, col_l.size);
+                    // and the opposite
+                    if (!leftOrRight && !col_l.bins_peak[at_nearest] && col_r.bins_peak[at_nearest])
+                        v = interpolate(at, col_r.bins, col_r.size);
+                } else {
+                    v = interpolate(at, leftOrRight ? col_r.bins : col_l.bins, leftOrRight ? col_r.size : col_l.size);
+                }
+                v *= multiplier;
+                if (v > 1.0) v = 1.0;
                 int idx = static_cast<int>(v * 255);
                 for (int x = at_x; x < at_x + w; x++) {
                     tex_l[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
@@ -828,17 +867,9 @@ private:
                     tex_l[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
                     tex_l[x][(texture_h - 1) - y].a = 255;
                 }
-            } else {
-                for (int x = at_x; x < at_x + w; x++) {
-                    tex_l[x][(texture_h - 1) - y].r = 0;
-                    tex_l[x][(texture_h - 1) - y].g = 0;
-                    tex_l[x][(texture_h - 1) - y].b = 0;
-                    tex_l[x][(texture_h - 1) - y].a = 255;
-                }
             }
             at += step;
         }
-
     }
 
     template <size_t size_x, size_t size_y>
@@ -851,10 +882,12 @@ private:
             float v_l = interpolate(at, col_l.bins, col_l.size);
             v_l *= multiplier;
             if (v_l > 1.0) v_l = 1.0;
-
+            if (peakBinsOnly && !col_l.bins_peak[static_cast<int>(at)]) v_l = 0.0f;
+            
             float v_r = interpolate(at, col_r.bins, col_r.size);
             v_r *= multiplier;
             if (v_r > 1.0) v_r = 1.0;
+            if (peakBinsOnly && !col_r.bins_peak[static_cast<int>(at)]) v_r = 0.0f;
             
             for (int x = at_x; x < at_x + w; x++) {
                 tex_l[x][(texture_h - 1) - y].r = v_l * 255;
@@ -865,47 +898,6 @@ private:
             at += step;
         }
     }
-
-    // template <size_t size_x, size_t size_y>
-    // void rasterColumn(Columns::Column col, int at_x, int w, Pixel tex[size_x][size_y], bool leftOrRight)
-    // {
-    //     if (col.peakMagnitude < 1e-6) {
-    //         for (int y = 0; y < texture_h; y++)
-    //         {
-    //             for (int x = at_x; x < at_x + w; x++) {
-    //                 tex[x][(texture_h - 1) - y].r = 0.0f;
-    //                 tex[x][(texture_h - 1) - y].g = 0.0f;
-    //                 tex[x][(texture_h - 1) - y].b = 0.0f;
-    //                 tex[x][(texture_h - 1) - y].a = 0.0f;
-    //             }
-    //         }
-    //         return;
-    //     }
-    //     float at = botbin;
-    //     float step = (topbin - at) / texture_h;
-    //     for (int y = 0; y < texture_h; y++)
-    //     {
-    //         float v = interpolate(at, col.bins, col.size);
-    //         v *= gain;
-    //         if (v > 1.0) v = 1.0;
-    //         // if (colorsId >= 6 && colorsId <=8) {
-    //         //     if (leftOrRight) {
-    //         //         v = 0.5 + (v/2);
-    //         //     } else {
-    //         //         v = 0.5 - (v/2);
-    //         //     }
-    //         // }
-    //         // v = 0.5 + (v * 0.5);
-    //         int idx = static_cast<int>(v * 255);
-    //         for (int x = at_x; x < at_x + w; x++) {
-    //             tex[x][(texture_h - 1) - y].r = (cmaps[colors[colorsId]][idx][0]) * 255;
-    //             tex[x][(texture_h - 1) - y].g = (cmaps[colors[colorsId]][idx][1]) * 255;
-    //             tex[x][(texture_h - 1) - y].b = (cmaps[colors[colorsId]][idx][2]) * 255;
-    //             tex[x][(texture_h - 1) - y].a = 255;
-    //         }
-    //         at += step;
-    //     }
-    // }
 
    /**
       Set our UI class as non-copyable and add a leak detector just in case.

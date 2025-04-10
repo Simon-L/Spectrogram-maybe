@@ -43,6 +43,7 @@ struct Columns {
 
     struct Column {
         std::vector<float> bins;
+        std::vector<bool> bins_peak;
         std::vector<float> bins_phase;
         size_t size;
         bool processed = false;
@@ -53,6 +54,7 @@ struct Columns {
         Column(size_t size) {
             bins.resize(size);
             bins_phase.resize(size);
+            bins_peak.resize(size);
             this->size = size;
         }
     };
@@ -132,6 +134,14 @@ struct Columns {
             if (magnitude > peakMag) { peakMag = magnitude; peakIndex = i; }
             col.bins[i] = magnitude;
             col.bins_phase[i] = std::arg(fftOutput[i]);
+            if (i > 1) {
+                if ((col.bins[i-1] > col.bins[i]) && (col.bins[i-1] > col.bins[i-2]))
+                {
+                    col.bins_peak[i-1] = true;
+                } else {
+                    col.bins_peak[i-1] = false;
+                }
+            }
         }
         col.peakFrequency = peakIndex * (sampleRate / (fftOutput.size() - 1) / 2);
         col.peakBin = peakIndex;
