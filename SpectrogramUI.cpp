@@ -17,6 +17,7 @@
 #include "DistrhoUI.hpp"
 #include "Application.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -115,8 +116,8 @@ public:
         window.resize(window_size);
         hann(window.data(), window_size, true);
         
-        std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin));
-        std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin));
+        std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin - 1));
+        std::sprintf(botbin_text, "%3.3fHz", freqAtBin(1));
         
         columns_l.init(&window, window_size);
         columns_r.init(&window, window_size);
@@ -206,7 +207,11 @@ public:
 
         setGeometryConstraints(900, 512, false);
     }
+    
+    char names[12][3] = { "C ", "C#", "D ", "Eb", "E ", "F ", "F#", "G ", "G#", "A ", "Bb", "B "};
 
+    inline float fton(float f) { return roundf(12 * log2(f / 440) + 69); }
+    
     NanoImage knob_img;
     NanoImage scale_img;
     DragFloat* dragfloat_pregain;
@@ -279,6 +284,9 @@ protected:
 
             initSpectrogramTexture();
             updateSpectrogramTexture();
+
+            std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin == window_size / 2 + 1 ? topbin - 1 : topbin));
+            std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin == 0 ? 1 : botbin));
         }
 
         if (request_raster_all && (since_last_raster > 4)) {
@@ -437,9 +445,11 @@ protected:
         int cur_bin = botbin + static_cast<int>(std::floor((texture_h - cursor1.getY()) / (texture_h / static_cast<float>(topbin - botbin))));
 
         if (cursor2.getY() > 1 || cursor2.getY() < texture_h) {
+            auto fc2 = freqAtBin(cursor2_bin);
+            auto fc2_n = fton(fc2);
             std::snprintf(cursor_text, 256,
-                    "Cursor:\n%3.3fHz\n\nMouse\ncol: %d bin: %d\nFrequency:\n%3.3fHz\n\nLEFT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f\n\nRIGHT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f",
-                    freqAtBin(cursor2_bin), cur_col, cur_bin,
+                    "Cursor:\n%3.3fHz %s%d\n\nMouse\ncol: %d bin: %d\nFrequency:\n%3.3fHz\n\nLEFT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f\n\nRIGHT\nPeak:%3.3fHz\nmag: %.3f\nphase: %.3f",
+                    fc2, names[static_cast<int>(fc2_n) % 12], static_cast<int>(fc2_n/12.0 - 1), cur_col, cur_bin,
                     freqAtBin(cur_bin),
                     c_l.peakFrequency, c_l.bins[cur_bin], c_l.bins_phase[cur_bin],
                     c_r.peakFrequency, c_r.bins[cur_bin], c_r.bins_phase[cur_bin]
@@ -651,14 +661,14 @@ protected:
         if (w == dragfloat_topbin) {
             topbin = std::min(float(window_size / 2 + 1), value);
             topbin = std::max(botbin, topbin);
-            std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin));
+            std::sprintf(topbin_text, "%3.3fHz", freqAtBin(topbin == window_size / 2 + 1 ? topbin - 1 : topbin));
             w->setValue(topbin);
             request_raster_all = true;
         }
         if (w == dragfloat_botbin) {
             botbin = std::min(float(window_size / 2 + 1), value);
             botbin = std::min(botbin, topbin);
-            std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin));
+            std::sprintf(botbin_text, "%3.3fHz", freqAtBin(botbin == 0 ? 1 : botbin));
             w->setValue(botbin);
             request_raster_all = true;
         }
@@ -677,7 +687,6 @@ protected:
         }
         if (frozen && (w == dragfloat_multiplier || w == dragfloat_threshold))
         {
-            d_stdout("Yes ?");
             request_raster_all = true;
         }
         
